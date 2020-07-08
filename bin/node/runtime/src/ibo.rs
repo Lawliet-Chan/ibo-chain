@@ -71,7 +71,7 @@ decl_storage! {
     trait Store for Module<T: Trait> as Ibo {
         pub Proposals get(fn proposals): Vec<Proposal<T::AccountId, BalanceOf<T>>>;
 
-        pub Tokens get(fn token): map hasher(twox_64_concat) Vec<u8> => TokenInfo<T::AccountId, BalanceOf<T>>;
+        pub Tokens get(fn token): map hasher(twox_64_concat) Vec<u8> => Option<TokenInfo<T::AccountId, BalanceOf<T>>>;
     }
 }
 
@@ -105,7 +105,7 @@ decl_module! {
                 target_board,
                 state: ProposalState::Pending,
                 timestamp: now,
-            }
+            };
             Proposals::<T>::mutate(|p| p.push(new_proposal));
         }
 
@@ -135,7 +135,7 @@ decl_module! {
                 target_board,
                 state: ProposalState::Pending,
                 timestamp: now,
-            }
+            };
             Proposals::<T>::mutate(|p| {
                 let proposal = p.get_mut(idx).unwrap();
                 *proposal = new_proposal;
@@ -143,7 +143,7 @@ decl_module! {
         }
 
         #[weight = 100]
-        fn delete_list_proposal(origin, token_symbol) {
+        fn delete_list_proposal(origin, token_symbol: Vec<u8>) {
             let proposer = ensure_signed(origin)?;
             let proposals = Self::proposals();
             let idx = Self::find_proposal_index(&token_symbol, proposals.clone())
@@ -173,12 +173,13 @@ decl_module! {
         fn create_rise_proposal(origin, token_symbol: Vec<u8>) {
             let proposer = ensure_signed(origin)?;
             let token_info = Self::token(&token_symbol).ok_or(Error::<T>::TokenNotFound)?;
+            let now = Self::get_now_ts();
             let new_proposal = Self::clone_from_token_info(proposer, BoardType::Main, now, token_info);
             Proposals::<T>::mutate(|p| p.push(new_proposal));
         }
 
         #[weight = 50]
-        fn delete_rise_proposal(origin, token_symbol) {
+        fn delete_rise_proposal(origin, token_symbol: Vec<u8>) {
             let proposer = ensure_signed(origin)?;
             let proposals = Self::proposals();
             let idx = Self::find_proposal_index(&token_symbol, proposals.clone())
@@ -190,6 +191,7 @@ decl_module! {
         fn create_fall_proposal(origin, token_symbol: Vec<u8>) {
             let proposer = ensure_signed(origin)?;
             let token_info = Self::token(&token_symbol).ok_or(Error::<T>::TokenNotFound)?;
+            let now = Self::get_now_ts();
             let new_proposal = Self::clone_from_token_info(proposer, BoardType::Growth, now, token_info);
             Proposals::<T>::mutate(|p| p.push(new_proposal));
         }
