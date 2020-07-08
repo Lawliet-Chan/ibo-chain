@@ -74,7 +74,7 @@ decl_module! {
         fn deposit_event() = default;
 
         #[weight = 200]
-        fn list_proposal(
+        fn create_list_proposal(
             origin,
             official_website_url: Vec<u8>,
             token_icon_url: Vec<u8>,
@@ -101,22 +101,98 @@ decl_module! {
             Proposals::<T>::mutate(|p| p.push(new_proposal));
         }
 
+        #[weight = 100]
+        fn update_list_proposal(
+            origin,
+            official_website_url: Vec<u8>,
+            token_icon_url: Vec<u8>,
+            token_symbol: Vec<u8>,
+            total_issuance: BalanceOf<T>,
+            total_circulation: BalanceOf<T>,
+            target_board: BoardType
+        ) {
+            let proposer = ensure_signed(origin)?;
+            let proposals = Self::proposals();
+            let idx = Self::find_proposal_index(&token_symbol, proposals.clone())
+                .ok_or(Error::<T>::NoProposalCanBeModified)?;
+            let now = Self::get_now_ts();
+            let new_proposal = Proposal {
+                proposer,
+                official_website_url,
+                token_icon_url,
+                token_symbol,
+                total_issuance,
+                total_circulation,
+                current_board: BoardType::Off,
+                target_board,
+                state: ProposalState::Pending,
+                timestamp: now,
+            }
+            Proposals::<T>::mutate(|p| {
+                let proposal = p.get_mut(idx).unwrap();
+                *proposal = new_proposal;
+            });
+        }
+
+        #[weight = 100]
+        fn delete_list_proposal(origin, token_symbol) {
+            let proposer = ensure_signed(origin)?;
+            let proposals = Self::proposals();
+            let idx = Self::find_proposal_index(&token_symbol, proposals.clone())
+                .ok_or(Error::<T>::NoProposalCanBeModified)?;
+            Proposals::<T>::mutate(|p| p.remove(idx));
+        }
+
         #[weight = 200]
-        fn delist_proposal(origin, token_symbol: Vec<u8>) {
+        fn create_delist_proposal(origin, token_symbol: Vec<u8>) {
             let proposer = ensure_signed(origin)?;
             let token_info = Self::token(&token_symbol).ok_or(Error::<T>::TokenNotFound)?;
+            let now = Self::get_now_ts();
+            let new_proposal = Self::clone_from_token_info(proposer, BoardType::Off, now, token_info);
+            Proposals::<T>::mutate(|p| p.push(new_proposal));
         }
 
         #[weight = 100]
-        fn rise_proposal(origin, token_symbol: Vec<u8>) {
+        fn delete_delist_proposal(origin, token_symbol: Vec<u8>) {
             let proposer = ensure_signed(origin)?;
-            let token_info = Self::token(&token_symbol).ok_or(Error::<T>::TokenNotFound)?;
+            let proposals = Self::proposals();
+            let idx = Self::find_proposal_index(&token_symbol, proposals.clone())
+                .ok_or(Error::<T>::NoProposalCanBeModified)?;
+            Proposals::<T>::mutate(|p| p.remove(idx));
         }
 
         #[weight = 100]
-        fn fall_proposal(origin, token_symbol: Vec<u8>) {
+        fn create_rise_proposal(origin, token_symbol: Vec<u8>) {
             let proposer = ensure_signed(origin)?;
             let token_info = Self::token(&token_symbol).ok_or(Error::<T>::TokenNotFound)?;
+            let new_proposal = Self::clone_from_token_info(proposer, BoardType::Main, now, token_info);
+            Proposals::<T>::mutate(|p| p.push(new_proposal));
+        }
+
+        #[weight = 50]
+        fn delete_rise_proposal(origin, token_symbol) {
+            let proposer = ensure_signed(origin)?;
+            let proposals = Self::proposals();
+            let idx = Self::find_proposal_index(&token_symbol, proposals.clone())
+                .ok_or(Error::<T>::NoProposalCanBeModified)?;
+            Proposals::<T>::mutate(|p| p.remove(idx));
+        }
+
+        #[weight = 100]
+        fn create_fall_proposal(origin, token_symbol: Vec<u8>) {
+            let proposer = ensure_signed(origin)?;
+            let token_info = Self::token(&token_symbol).ok_or(Error::<T>::TokenNotFound)?;
+            let new_proposal = Self::clone_from_token_info(proposer, BoardType::Growth, now, token_info);
+            Proposals::<T>::mutate(|p| p.push(new_proposal));
+        }
+
+        #[weight = 50]
+        fn delete_fall_proposal(origin, token_symbol: Vec<u8>) {
+            let proposer = ensure_signed(origin)?;
+            let proposals = Self::proposals();
+            let idx = Self::find_proposal_index(&token_symbol, proposals.clone())
+                .ok_or(Error::<T>::NoProposalCanBeModified)?;
+            Proposals::<T>::mutate(|p| p.remove(idx));
         }
 
     }
@@ -127,6 +203,42 @@ impl<T: Trait> Module<T> {
         let now = <timestamp::Module<T>>::get();
         <T::Moment as TryInto<u64>>::try_into(now).ok().unwrap()
     }
+
+    fn find_proposal_index(
+        token_symbol: &Vec<u8>,
+        mut proposals: Vec<Proposal<T::AccountId, BalanceOf<T>>>,
+    ) -> Option<usize> {
+        proposals.reverse();
+        let mut idx = proposals.len() - 1;
+        for proposal in proposals {
+            if &proposal.token_symbol == token_symbol && proposal.state == ProposalState::Pending {
+                return Some(idx);
+            } else {
+                idx -= 1;
+            }
+        }
+        None
+    }
+
+    fn clone_from_token_info(
+        proposer: T::AccountId,
+        target_board: BoardType,
+        timestamp: u64,
+        token_info: TokenInfo<T::AccountId, BalanceOf<T>>,
+    ) -> Proposal<T::AccountId, BalanceOf<T>> {
+        Proposal {
+            proposer,
+            official_website_url: token_info.official_website_url,
+            token_icon_url: token_info.token_icon_url,
+            token_symbol: token_info.token_symbol,
+            total_issuance: token_info.total_issuance,
+            total_circulation: token_info.total_circulation,
+            current_board: token_info.current_board,
+            target_board,
+            state: ProposalState::Pending,
+            timestamp,
+        }
+    }
 }
 
 decl_error! {
@@ -136,5 +248,9 @@ decl_error! {
         TokenExists,
         /// There is no token named it.
         TokenNotFound,
+        /// You don't own this token.
+        PermissionDenied,
+        /// There is no proposal can be modified.
+        NoProposalCanBeModified,
     }
 }
