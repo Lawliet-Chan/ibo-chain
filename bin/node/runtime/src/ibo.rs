@@ -22,7 +22,7 @@ pub trait Trait: system::Trait + timestamp::Trait {
     type Currency: ReservableCurrency<Self::AccountId>;
 }
 
-#[derive(Encode, Decode, Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Encode, Decode, Clone, Default, Debug, PartialEq, Eq)]
 pub struct TokenInfo<AccountId, Balance> {
     pub proposer: AccountId,
     pub official_website_url: Vec<u8>,
@@ -33,7 +33,7 @@ pub struct TokenInfo<AccountId, Balance> {
     pub current_board: BoardType,
 }
 
-#[derive(Encode, Decode, Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Encode, Decode, Clone, Debug, PartialEq, Eq)]
 pub struct Proposal<AccountId, Balance> {
     pub proposer: AccountId,
     pub official_website_url: Vec<u8>,
@@ -47,14 +47,20 @@ pub struct Proposal<AccountId, Balance> {
     pub timestamp: u64,
 }
 
-#[derive(Encode, Decode, Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Encode, Decode, Clone, Debug, PartialEq, Eq)]
 pub enum BoardType {
     Main,
     Growth,
     Off,
 }
 
-#[derive(Encode, Decode, Clone, Debug, Default, PartialEq, Eq)]
+impl Default for BoardType {
+    fn default() -> Self {
+        BoardType::Off
+    }
+}
+
+#[derive(Encode, Decode, Clone, Debug, PartialEq, Eq)]
 pub enum ProposalState {
     Pending,
     Approved,
@@ -71,6 +77,8 @@ decl_storage! {
 
 decl_module! {
     pub struct Module<T: Trait> for enum Call where origin: T::Origin {
+        type Error = Error<T>;
+
         fn deposit_event() = default;
 
         #[weight = 200]
@@ -239,6 +247,15 @@ impl<T: Trait> Module<T> {
             timestamp,
         }
     }
+}
+
+decl_event! {
+    pub enum Event<T>
+        where
+        AccountId = <T as system::Trait>::AccountId
+        {
+            Vote(AccountId),
+        }
 }
 
 decl_error! {
