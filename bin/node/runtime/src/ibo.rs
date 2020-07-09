@@ -144,7 +144,7 @@ decl_module! {
 
         #[weight = 100]
         fn delete_list_proposal(origin, token_symbol: Vec<u8>) {
-            let proposer = ensure_signed(origin)?;
+            let _proposer = ensure_signed(origin)?;
             let proposals = Self::proposals();
             let idx = Self::find_proposal_index(&token_symbol, proposals.clone())
                 .ok_or(Error::<T>::NoProposalCanBeModified)?;
@@ -162,7 +162,7 @@ decl_module! {
 
         #[weight = 100]
         fn delete_delist_proposal(origin, token_symbol: Vec<u8>) {
-            let proposer = ensure_signed(origin)?;
+            let _proposer = ensure_signed(origin)?;
             let proposals = Self::proposals();
             let idx = Self::find_proposal_index(&token_symbol, proposals.clone())
                 .ok_or(Error::<T>::NoProposalCanBeModified)?;
@@ -180,7 +180,7 @@ decl_module! {
 
         #[weight = 50]
         fn delete_rise_proposal(origin, token_symbol: Vec<u8>) {
-            let proposer = ensure_signed(origin)?;
+            let _proposer = ensure_signed(origin)?;
             let proposals = Self::proposals();
             let idx = Self::find_proposal_index(&token_symbol, proposals.clone())
                 .ok_or(Error::<T>::NoProposalCanBeModified)?;
@@ -198,7 +198,7 @@ decl_module! {
 
         #[weight = 50]
         fn delete_fall_proposal(origin, token_symbol: Vec<u8>) {
-            let proposer = ensure_signed(origin)?;
+            let _proposer = ensure_signed(origin)?;
             let proposals = Self::proposals();
             let idx = Self::find_proposal_index(&token_symbol, proposals.clone())
                 .ok_or(Error::<T>::NoProposalCanBeModified)?;
