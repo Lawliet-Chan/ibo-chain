@@ -36,6 +36,7 @@ pub struct TokenInfo<AccountId, Balance> {
 #[derive(Encode, Decode, Clone, Debug, PartialEq, Eq)]
 pub struct Proposal<AccountId, Balance> {
     pub proposer: AccountId,
+    pub proposal_type: ProposalType,
     pub official_website_url: Vec<u8>,
     pub token_icon_url: Vec<u8>,
     pub token_symbol: Vec<u8>,
@@ -57,6 +58,20 @@ pub enum BoardType {
 impl Default for BoardType {
     fn default() -> Self {
         BoardType::Off
+    }
+}
+
+#[derive(Encode, Decode, Clone, Debug, PartialEq, Eq)]
+pub enum ProposalType {
+    List,
+    Delist,
+    Rise,
+    Fall,
+}
+
+impl Default for ProposalType {
+    fn default() -> Self {
+        ProposalType::List
     }
 }
 
@@ -96,6 +111,7 @@ decl_module! {
             let now = Self::get_now_ts();
             let new_proposal = Proposal {
                 proposer,
+                proposal_type: ProposalType::List,
                 official_website_url,
                 token_icon_url,
                 token_symbol,
@@ -126,6 +142,7 @@ decl_module! {
             let now = Self::get_now_ts();
             let new_proposal = Proposal {
                 proposer,
+                proposal_type: ProposalType::List,
                 official_website_url,
                 token_icon_url,
                 token_symbol,
@@ -156,7 +173,7 @@ decl_module! {
             let proposer = ensure_signed(origin)?;
             let token_info = Self::token(&token_symbol).ok_or(Error::<T>::TokenNotFound)?;
             let now = Self::get_now_ts();
-            let new_proposal = Self::clone_from_token_info(proposer, BoardType::Off, now, token_info);
+            let new_proposal = Self::clone_from_token_info(proposer, ProposalType::Delist, BoardType::Off, now, token_info);
             Proposals::<T>::mutate(|p| p.push(new_proposal));
         }
 
@@ -174,7 +191,7 @@ decl_module! {
             let proposer = ensure_signed(origin)?;
             let token_info = Self::token(&token_symbol).ok_or(Error::<T>::TokenNotFound)?;
             let now = Self::get_now_ts();
-            let new_proposal = Self::clone_from_token_info(proposer, BoardType::Main, now, token_info);
+            let new_proposal = Self::clone_from_token_info(proposer, ProposalType::Rise, BoardType::Main, now, token_info);
             Proposals::<T>::mutate(|p| p.push(new_proposal));
         }
 
@@ -192,7 +209,7 @@ decl_module! {
             let proposer = ensure_signed(origin)?;
             let token_info = Self::token(&token_symbol).ok_or(Error::<T>::TokenNotFound)?;
             let now = Self::get_now_ts();
-            let new_proposal = Self::clone_from_token_info(proposer, BoardType::Growth, now, token_info);
+            let new_proposal = Self::clone_from_token_info(proposer, ProposalType::Fall, BoardType::Growth, now, token_info);
             Proposals::<T>::mutate(|p| p.push(new_proposal));
         }
 
@@ -232,12 +249,14 @@ impl<T: Trait> Module<T> {
 
     fn clone_from_token_info(
         proposer: T::AccountId,
+        proposal_type: ProposalType,
         target_board: BoardType,
         timestamp: u64,
         token_info: TokenInfo<T::AccountId, BalanceOf<T>>,
     ) -> Proposal<T::AccountId, BalanceOf<T>> {
         Proposal {
             proposer,
+            proposal_type,
             official_website_url: token_info.official_website_url,
             token_icon_url: token_info.token_icon_url,
             token_symbol: token_info.token_symbol,
