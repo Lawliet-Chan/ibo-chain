@@ -71,3 +71,32 @@ pub mod time {
     pub const HOURS: BlockNumber = MINUTES * 60;
     pub const DAYS: BlockNumber = HOURS * 24;
 }
+
+pub mod referendum {
+
+    pub const DAY: u64 = 1000 * 60 * 60 * 24;
+
+    pub type VoteAge = f32;
+
+    /// lock period 8 days
+    pub const A_AGE: VoteAge = 1.0;
+    /// lock period 16 days
+    pub const B_AGE: VoteAge = 1.5;
+    /// lock period 32 days
+    pub const C_AGE: VoteAge = 2.25;
+    /// lock period 64 days
+    pub const D_AGE: VoteAge = 3.375;
+    /// lock period 128 days
+    pub const E_AGE: VoteAge = 5.0;
+    /// lock period 256 days
+    pub const F_AGE: VoteAge = 7.6;
+
+    pub type LockPeriod = u64;
+
+    pub const A_DAY: LockPeriod = 8 * DAY;
+    pub const B_DAY: LockPeriod = 16 * DAY;
+    pub const C_DAY: LockPeriod = 32 * DAY;
+    pub const D_DAY: LockPeriod = 64 * DAY;
+    pub const E_DAY: LockPeriod = 128 * DAY;
+    pub const F_DAY: LockPeriod = 256 * DAY;
+}
