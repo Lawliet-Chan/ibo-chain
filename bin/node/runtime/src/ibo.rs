@@ -2,6 +2,7 @@
 
 extern crate frame_system as system;
 extern crate pallet_timestamp as timestamp;
+extern crate pallet_collective as collective;
 
 use codec::{Decode, Encode};
 use frame_support::traits::{BalanceStatus, Currency, ReservableCurrency};
@@ -13,9 +14,12 @@ use sp_runtime::traits::SaturatedConversion;
 use sp_std::convert::TryInto;
 use sp_std::vec::Vec;
 use system::ensure_signed;
+use crate::constants::{congress::*, referendum::*};
 
 pub type BalanceOf<T> =
     <<T as Trait>::Currency as Currency<<T as frame_system::Trait>::AccountId>>::Balance;
+
+pub const ZERO_NUM: (u64, u64) = (0, 0);
 
 pub trait Trait: system::Trait + timestamp::Trait {
     type Event: From<Event<Self>> + Into<<Self as system::Trait>::Event>;
@@ -33,7 +37,7 @@ pub struct TokenInfo<AccountId, Balance> {
     pub current_board: BoardType,
 }
 
-#[derive(Encode, Decode, Clone, Debug, PartialEq, Eq)]
+#[derive(Encode, Decode, Clone, Default, Debug, PartialEq, Eq)]
 pub struct Proposal<AccountId, Balance> {
     pub proposer: AccountId,
     pub proposal_type: ProposalType,
@@ -44,7 +48,16 @@ pub struct Proposal<AccountId, Balance> {
     pub total_circulation: Balance,
     pub current_board: BoardType,
     pub target_board: BoardType,
-    pub state: ProposalState,
+    /// The result of contress reviews.
+    pub review_result: ProposalState,
+    /// The result of all people vote.
+    pub vote_result: ProposalState,
+    /// The reviewing number of (supporters, opponents)
+    /// Number = VoteAge * TokenAmount
+    pub review_num: (u64, u64),
+    /// The voting number of (supporters, opponents)
+    /// Number = VoteAge * TokenAmount
+    pub vote_num: (u64, u64),
     pub timestamp: u64,
 }
 
@@ -82,11 +95,19 @@ pub enum ProposalState {
     Rejected,
 }
 
+impl Default for ProposalState {
+    fn default() -> Self {
+        ProposalState::Pending
+    }
+}
+
 decl_storage! {
     trait Store for Module<T: Trait> as Ibo {
-        pub Proposals get(fn proposals): Vec<Proposal<T::AccountId, BalanceOf<T>>>;
+        pub Proposals get(fn proposal): map hasher(twox_64_concat) u64 => Proposal<T::AccountId, BalanceOf<T>>;
 
         pub Tokens get(fn token): map hasher(twox_64_concat) Vec<u8> => Option<TokenInfo<T::AccountId, BalanceOf<T>>>;
+
+        pub IdGenerator get(fn id_generator): u64 = 0;
     }
 }
 
@@ -107,8 +128,9 @@ decl_module! {
             target_board: BoardType
         ) {
             let proposer = ensure_signed(origin)?;
-            ensure!(Tokens::<T>::contains_key(&token_symbol), Error::<T>::TokenExists);
+            ensure!(!Tokens::<T>::contains_key(&token_symbol), Error::<T>::TokenExists);
             let now = Self::get_now_ts();
+            let id = Self::generate_id();
             let new_proposal = Proposal {
                 proposer,
                 proposal_type: ProposalType::List,
@@ -119,15 +141,20 @@ decl_module! {
                 total_circulation,
                 current_board: BoardType::Off,
                 target_board,
-                state: ProposalState::Pending,
+                review_result: ProposalState::Pending,
+                vote_result: ProposalState::Pending,
+                review_num: ZERO_NUM,
+                vote_num: ZERO_NUM,
                 timestamp: now,
             };
-            Proposals::<T>::mutate(|p| p.push(new_proposal));
+            Proposals::<T>::insert(id, new_proposal);
+            Self::deposit_event(RawEvent::CreateProposal(id));
         }
 
         #[weight = 100]
         fn update_list_proposal(
             origin,
+            id: u64,
             official_website_url: Vec<u8>,
             token_icon_url: Vec<u8>,
             token_symbol: Vec<u8>,
@@ -136,9 +163,6 @@ decl_module! {
             target_board: BoardType
         ) {
             let proposer = ensure_signed(origin)?;
-            let proposals = Self::proposals();
-            let idx = Self::find_proposal_index(&token_symbol, proposals.clone())
-                .ok_or(Error::<T>::NoProposalCanBeModified)?;
             let now = Self::get_now_ts();
             let new_proposal = Proposal {
                 proposer,
@@ -150,22 +174,19 @@ decl_module! {
                 total_circulation,
                 current_board: BoardType::Off,
                 target_board,
-                state: ProposalState::Pending,
+                review_result: ProposalState::Pending,
+                vote_result: ProposalState::Pending,
+                review_num: ZERO_NUM,
+                vote_num: ZERO_NUM,
                 timestamp: now,
             };
-            Proposals::<T>::mutate(|p| {
-                let proposal = p.get_mut(idx).unwrap();
-                *proposal = new_proposal;
-            });
+            Self::update_proposal(id, new_proposal);
         }
 
         #[weight = 100]
-        fn delete_list_proposal(origin, token_symbol: Vec<u8>) {
-            let _proposer = ensure_signed(origin)?;
-            let proposals = Self::proposals();
-            let idx = Self::find_proposal_index(&token_symbol, proposals.clone())
-                .ok_or(Error::<T>::NoProposalCanBeModified)?;
-            Proposals::<T>::mutate(|p| p.remove(idx));
+        fn delete_list_proposal(origin, id: u64) {
+            let _ = ensure_signed(origin)?;
+            Self::remove_proposal(id);
         }
 
         #[weight = 200]
@@ -173,17 +194,16 @@ decl_module! {
             let proposer = ensure_signed(origin)?;
             let token_info = Self::token(&token_symbol).ok_or(Error::<T>::TokenNotFound)?;
             let now = Self::get_now_ts();
+            let id = Self::generate_id();
             let new_proposal = Self::clone_from_token_info(proposer, ProposalType::Delist, BoardType::Off, now, token_info);
-            Proposals::<T>::mutate(|p| p.push(new_proposal));
+            Proposals::<T>::insert(id, new_proposal);
+            Self::deposit_event(RawEvent::CreateProposal(id));
         }
 
         #[weight = 100]
-        fn delete_delist_proposal(origin, token_symbol: Vec<u8>) {
-            let _proposer = ensure_signed(origin)?;
-            let proposals = Self::proposals();
-            let idx = Self::find_proposal_index(&token_symbol, proposals.clone())
-                .ok_or(Error::<T>::NoProposalCanBeModified)?;
-            Proposals::<T>::mutate(|p| p.remove(idx));
+        fn delete_delist_proposal(origin, id: u64) {
+            let _ = ensure_signed(origin)?;
+            Self::remove_proposal(id);
         }
 
         #[weight = 100]
@@ -192,16 +212,15 @@ decl_module! {
             let token_info = Self::token(&token_symbol).ok_or(Error::<T>::TokenNotFound)?;
             let now = Self::get_now_ts();
             let new_proposal = Self::clone_from_token_info(proposer, ProposalType::Rise, BoardType::Main, now, token_info);
-            Proposals::<T>::mutate(|p| p.push(new_proposal));
+            let id = Self::generate_id();
+            Proposals::<T>::insert(id, new_proposal);
+            Self::deposit_event(RawEvent::CreateProposal(id));
         }
 
         #[weight = 50]
-        fn delete_rise_proposal(origin, token_symbol: Vec<u8>) {
-            let _proposer = ensure_signed(origin)?;
-            let proposals = Self::proposals();
-            let idx = Self::find_proposal_index(&token_symbol, proposals.clone())
-                .ok_or(Error::<T>::NoProposalCanBeModified)?;
-            Proposals::<T>::mutate(|p| p.remove(idx));
+        fn delete_rise_proposal(origin, id: u64) {
+            let _ = ensure_signed(origin)?;
+            Self::remove_proposal(id);
         }
 
         #[weight = 100]
@@ -209,17 +228,29 @@ decl_module! {
             let proposer = ensure_signed(origin)?;
             let token_info = Self::token(&token_symbol).ok_or(Error::<T>::TokenNotFound)?;
             let now = Self::get_now_ts();
+            let id = Self::generate_id();
             let new_proposal = Self::clone_from_token_info(proposer, ProposalType::Fall, BoardType::Growth, now, token_info);
-            Proposals::<T>::mutate(|p| p.push(new_proposal));
+            Proposals::<T>::insert(id, new_proposal);
+            Self::deposit_event(RawEvent::CreateProposal(id));
         }
 
         #[weight = 50]
-        fn delete_fall_proposal(origin, token_symbol: Vec<u8>) {
-            let _proposer = ensure_signed(origin)?;
-            let proposals = Self::proposals();
-            let idx = Self::find_proposal_index(&token_symbol, proposals.clone())
-                .ok_or(Error::<T>::NoProposalCanBeModified)?;
-            Proposals::<T>::mutate(|p| p.remove(idx));
+        fn delete_fall_proposal(origin, id: u64) {
+            let _ = ensure_signed(origin)?;
+            Self::remove_proposal(id);
+        }
+
+        #[weight = 10]
+        fn review_proposal(origin, proposal_id: u64) {
+            let member = ensure_signed(origin)?;
+            // ensure!(<collective::Module<T>>::is_member(&member), Error::<T>::NotInCollective);
+
+        }
+
+        #[weight = 10]
+        fn vote_proposal(origin, proposal_id: u64) {
+            let user = ensure_signed(origin)?;
+
         }
 
     }
@@ -231,20 +262,18 @@ impl<T: Trait> Module<T> {
         <T::Moment as TryInto<u64>>::try_into(now).ok().unwrap()
     }
 
-    fn find_proposal_index(
-        token_symbol: &Vec<u8>,
-        mut proposals: Vec<Proposal<T::AccountId, BalanceOf<T>>>,
-    ) -> Option<usize> {
-        proposals.reverse();
-        let mut idx = proposals.len() - 1;
-        for proposal in proposals {
-            if &proposal.token_symbol == token_symbol && proposal.state == ProposalState::Pending {
-                return Some(idx);
-            } else {
-                idx -= 1;
-            }
+    fn update_proposal(id: u64, new_proposal: Proposal<T::AccountId, BalanceOf<T>>) {
+        let proposal: Proposal<T::AccountId, BalanceOf<T>> = Self::proposal(id);
+        if proposal.review_num != ZERO_NUM {
+            Proposals::<T>::insert(id, new_proposal);
         }
-        None
+    }
+
+    fn remove_proposal(id: u64) {
+        let proposal: Proposal<T::AccountId, BalanceOf<T>> = Self::proposal(id);
+        if proposal.review_num != ZERO_NUM {
+            Proposals::<T>::remove(id);
+        }
     }
 
     fn clone_from_token_info(
@@ -264,9 +293,21 @@ impl<T: Trait> Module<T> {
             total_circulation: token_info.total_circulation,
             current_board: token_info.current_board,
             target_board,
-            state: ProposalState::Pending,
+            review_result: ProposalState::Pending,
+            vote_result: ProposalState::Pending,
+            review_num: ZERO_NUM,
+            vote_num: ZERO_NUM,
             timestamp,
         }
+    }
+
+    fn generate_id() -> u64 {
+        let mut id = 0;
+        IdGenerator::mutate(|i| {
+            id = *i;
+            *i = *i + 1;
+        });
+        id
     }
 }
 
@@ -276,6 +317,8 @@ decl_event! {
         AccountId = <T as system::Trait>::AccountId
         {
             Vote(AccountId),
+
+            CreateProposal(u64),
         }
 }
 
@@ -290,5 +333,7 @@ decl_error! {
         PermissionDenied,
         /// There is no proposal can be modified.
         NoProposalCanBeModified,
+        /// You are not a member of collective.
+        NotInCollective,
     }
 }

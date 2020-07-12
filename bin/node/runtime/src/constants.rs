@@ -70,26 +70,40 @@ pub mod time {
     pub const MINUTES: BlockNumber = 60 / (SECS_PER_BLOCK as BlockNumber);
     pub const HOURS: BlockNumber = MINUTES * 60;
     pub const DAYS: BlockNumber = HOURS * 24;
-}
-
-pub mod referendum {
 
     pub const DAY: u64 = 1000 * 60 * 60 * 24;
 
-    pub type VoteAge = f32;
+}
+
+pub mod congress {
+    use crate::constants::time::DAY;
+
+    pub const MAX_MEMBERS: u8 = 23;
+
+    pub const PASS_RATE: f32 = 0.66;
+
+    pub const REVIEW_DURATION: u64 = 7 * DAY;
+}
+
+pub mod referendum {
+    use crate::constants::time::DAY;
+
+    pub type VoteAge = u64;
+
+    pub const VOTE_DURATION: u64 = 7 * DAY;
 
     /// lock period 8 days
-    pub const A_AGE: VoteAge = 1.0;
+    pub const A_AGE: VoteAge = 1000;
     /// lock period 16 days
-    pub const B_AGE: VoteAge = 1.5;
+    pub const B_AGE: VoteAge = 1500;
     /// lock period 32 days
-    pub const C_AGE: VoteAge = 2.25;
+    pub const C_AGE: VoteAge = 2250;
     /// lock period 64 days
-    pub const D_AGE: VoteAge = 3.375;
+    pub const D_AGE: VoteAge = 3375;
     /// lock period 128 days
-    pub const E_AGE: VoteAge = 5.0;
+    pub const E_AGE: VoteAge = 5000;
     /// lock period 256 days
-    pub const F_AGE: VoteAge = 7.6;
+    pub const F_AGE: VoteAge = 7600;
 
     pub type LockPeriod = u64;
 
@@ -99,4 +113,11 @@ pub mod referendum {
     pub const D_DAY: LockPeriod = 64 * DAY;
     pub const E_DAY: LockPeriod = 128 * DAY;
     pub const F_DAY: LockPeriod = 256 * DAY;
+
+    /// If total (LockPeriod * VoteAge) >= LIST_PASS_RATE,
+    /// it will list the token.
+    pub const LIST_PASS_RATE: f32 = 0.66;
+    /// If total (LockPeriod * VoteAge) >= DELIST_PASS_RATE,
+    /// it will delist the token.
+    pub const DELIST_PASS_RATE: f32 = 0.5;
 }
