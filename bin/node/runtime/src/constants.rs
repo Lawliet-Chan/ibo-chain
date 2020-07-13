@@ -82,6 +82,8 @@ pub mod congress {
 
     pub const PASS_RATE: f32 = 0.66;
 
+    pub const ALLOW_MODIFY_DURATION: u64 = 1 * DAY;
+
     pub const REVIEW_DURATION: u64 = 7 * DAY;
 }
 

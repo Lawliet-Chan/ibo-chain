@@ -24,6 +24,7 @@ pub const ZERO_NUM: (u64, u64) = (0, 0);
 pub trait Trait: system::Trait + timestamp::Trait {
     type Event: From<Event<Self>> + Into<<Self as system::Trait>::Event>;
     type Currency: ReservableCurrency<Self::AccountId>;
+    // type Congress: collective::Trait<collective::Instance1>;
 }
 
 #[derive(Encode, Decode, Clone, Default, Debug, PartialEq, Eq)]
@@ -58,6 +59,7 @@ pub struct Proposal<AccountId, Balance> {
     /// The voting number of (supporters, opponents)
     /// Number = VoteAge * TokenAmount
     pub vote_num: (u64, u64),
+    /// When propose or review the proposal, update this timestamp.
     pub timestamp: u64,
 }
 
