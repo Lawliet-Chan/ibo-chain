@@ -19,7 +19,7 @@ use crate::constants::{congress::*, referendum::*};
 pub type BalanceOf<T> =
     <<T as Trait>::Currency as Currency<<T as frame_system::Trait>::AccountId>>::Balance;
 
-pub const ZERO_NUM: (u64, u64) = (0, 0);
+pub const ZERO_GOALS: (u64, u64) = (0, 0);
 
 pub trait Trait: system::Trait + timestamp::Trait {
     type Event: From<Event<Self>> + Into<<Self as system::Trait>::Event>;
@@ -49,17 +49,15 @@ pub struct Proposal<AccountId, Balance> {
     pub total_circulation: Balance,
     pub current_board: BoardType,
     pub target_board: BoardType,
-    /// The result of contress reviews.
-    pub review_result: ProposalState,
-    /// The result of all people vote.
-    pub vote_result: ProposalState,
+    /// The state of proposal.
+    pub state: ProposalState,
     /// The reviewing number of (supporters, opponents)
     /// Number = VoteAge * TokenAmount
-    pub review_num: (u64, u64),
+    pub review_goals: (u64, u64),
     /// The voting number of (supporters, opponents)
     /// Number = VoteAge * TokenAmount
-    pub vote_num: (u64, u64),
-    /// When propose or review the proposal, update this timestamp.
+    pub vote_goals: (u64, u64),
+    /// When the state of proposal changes, update this timestamp.
     pub timestamp: u64,
 }
 
@@ -93,6 +91,8 @@ impl Default for ProposalType {
 #[derive(Encode, Decode, Clone, Debug, PartialEq, Eq)]
 pub enum ProposalState {
     Pending,
+    Reviewing,
+    Voting,
     Approved,
     Rejected,
 }
@@ -128,7 +128,7 @@ decl_module! {
             total_issuance: BalanceOf<T>,
             total_circulation: BalanceOf<T>,
             target_board: BoardType
-        ) {
+        ) -> DispatchResult {
             let proposer = ensure_signed(origin)?;
             ensure!(!Tokens::<T>::contains_key(&token_symbol), Error::<T>::TokenExists);
             let now = Self::get_now_ts();
@@ -143,14 +143,14 @@ decl_module! {
                 total_circulation,
                 current_board: BoardType::Off,
                 target_board,
-                review_result: ProposalState::Pending,
-                vote_result: ProposalState::Pending,
-                review_num: ZERO_NUM,
-                vote_num: ZERO_NUM,
+                state: ProposalState::Pending,
+                review_goals: ZERO_GOALS,
+                vote_goals: ZERO_GOALS,
                 timestamp: now,
             };
             Proposals::<T>::insert(id, new_proposal);
             Self::deposit_event(RawEvent::CreateProposal(id));
+            Ok(())
         }
 
         #[weight = 100]
@@ -163,7 +163,7 @@ decl_module! {
             total_issuance: BalanceOf<T>,
             total_circulation: BalanceOf<T>,
             target_board: BoardType
-        ) {
+        ) -> DispatchResult {
             let proposer = ensure_signed(origin)?;
             let now = Self::get_now_ts();
             let new_proposal = Proposal {
@@ -176,19 +176,18 @@ decl_module! {
                 total_circulation,
                 current_board: BoardType::Off,
                 target_board,
-                review_result: ProposalState::Pending,
-                vote_result: ProposalState::Pending,
-                review_num: ZERO_NUM,
-                vote_num: ZERO_NUM,
+                state: ProposalState::Pending,
+                review_goals: ZERO_GOALS,
+                vote_goals: ZERO_GOALS,
                 timestamp: now,
             };
-            Self::update_proposal(id, new_proposal);
+            Self::update_proposal(id, new_proposal)
         }
 
         #[weight = 100]
-        fn delete_list_proposal(origin, id: u64) {
+        fn delete_list_proposal(origin, id: u64) -> DispatchResult {
             let _ = ensure_signed(origin)?;
-            Self::remove_proposal(id);
+            Self::remove_proposal(id)
         }
 
         #[weight = 200]
@@ -203,9 +202,9 @@ decl_module! {
         }
 
         #[weight = 100]
-        fn delete_delist_proposal(origin, id: u64) {
+        fn delete_delist_proposal(origin, id: u64) -> DispatchResult {
             let _ = ensure_signed(origin)?;
-            Self::remove_proposal(id);
+            Self::remove_proposal(id)
         }
 
         #[weight = 100]
@@ -220,9 +219,9 @@ decl_module! {
         }
 
         #[weight = 50]
-        fn delete_rise_proposal(origin, id: u64) {
+        fn delete_rise_proposal(origin, id: u64) -> DispatchResult {
             let _ = ensure_signed(origin)?;
-            Self::remove_proposal(id);
+            Self::remove_proposal(id)
         }
 
         #[weight = 100]
@@ -237,9 +236,9 @@ decl_module! {
         }
 
         #[weight = 50]
-        fn delete_fall_proposal(origin, id: u64) {
+        fn delete_fall_proposal(origin, id: u64) -> DispatchResult {
             let _ = ensure_signed(origin)?;
-            Self::remove_proposal(id);
+            Self::remove_proposal(id)
         }
 
         #[weight = 10]
@@ -264,18 +263,18 @@ impl<T: Trait> Module<T> {
         <T::Moment as TryInto<u64>>::try_into(now).ok().unwrap()
     }
 
-    fn update_proposal(id: u64, new_proposal: Proposal<T::AccountId, BalanceOf<T>>) {
+    fn update_proposal(id: u64, new_proposal: Proposal<T::AccountId, BalanceOf<T>>) -> DispatchResult {
         let proposal: Proposal<T::AccountId, BalanceOf<T>> = Self::proposal(id);
-        if proposal.review_num != ZERO_NUM {
-            Proposals::<T>::insert(id, new_proposal);
-        }
+        ensure!(proposal.state == ProposalState::Pending, Error::<T>::ProposalCannotBeModified);
+        Proposals::<T>::insert(id, new_proposal);
+        Ok(())
     }
 
-    fn remove_proposal(id: u64) {
+    fn remove_proposal(id: u64) -> DispatchResult {
         let proposal: Proposal<T::AccountId, BalanceOf<T>> = Self::proposal(id);
-        if proposal.review_num != ZERO_NUM {
-            Proposals::<T>::remove(id);
-        }
+        ensure!(proposal.state == ProposalState::Pending, Error::<T>::ProposalCannotBeModified);
+        Proposals::<T>::remove(id);
+        Ok(())
     }
 
     fn clone_from_token_info(
@@ -295,10 +294,9 @@ impl<T: Trait> Module<T> {
             total_circulation: token_info.total_circulation,
             current_board: token_info.current_board,
             target_board,
-            review_result: ProposalState::Pending,
-            vote_result: ProposalState::Pending,
-            review_num: ZERO_NUM,
-            vote_num: ZERO_NUM,
+            state: ProposalState::Pending,
+            review_goals: ZERO_GOALS,
+            vote_goals: ZERO_GOALS,
             timestamp,
         }
     }
@@ -331,10 +329,8 @@ decl_error! {
         TokenExists,
         /// There is no token named it.
         TokenNotFound,
-        /// You don't own this token.
-        PermissionDenied,
         /// There is no proposal can be modified.
-        NoProposalCanBeModified,
+        ProposalCannotBeModified,
         /// You are not a member of collective.
         NotInCollective,
     }
