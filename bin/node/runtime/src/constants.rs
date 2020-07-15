@@ -72,7 +72,6 @@ pub mod time {
     pub const DAYS: BlockNumber = HOURS * 24;
 
     pub const DAY: u64 = 1000 * 60 * 60 * 24;
-
 }
 
 pub mod congress {
@@ -89,10 +88,23 @@ pub mod congress {
 
 pub mod referendum {
     use crate::constants::time::DAY;
+    // use sp_std::vec;
+    // use sp_std::vec::Vec;
 
     pub type VoteAge = u64;
 
     pub const VOTE_DURATION: u64 = 7 * DAY;
+
+    pub const RECEIVE_REWARDS_DURATION: u64 = 30 * DAY;
+
+    pub const AGE_DAY: [(VoteAge, LockPeriod); 6] = [
+        (A_AGE, A_DAY),
+        (B_AGE, B_DAY),
+        (C_AGE, C_DAY),
+        (D_AGE, D_DAY),
+        (E_AGE, E_DAY),
+        (F_AGE, F_DAY),
+    ];
 
     /// lock period 8 days
     pub const A_AGE: VoteAge = 1000;
