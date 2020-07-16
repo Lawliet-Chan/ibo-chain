@@ -20,10 +20,11 @@ pub type BalanceOf<T> =
     <<T as Trait>::Currency as Currency<<T as frame_system::Trait>::AccountId>>::Balance;
 
 pub const ZERO_GOALS: (u64, u64) = (0, 0);
+pub const TOTAL_REWARDS: u64 = 100_000;
 
 pub trait Trait: system::Trait + timestamp::Trait {
     type Event: From<Event<Self>> + Into<<Self as system::Trait>::Event>;
-    type Currency: ReservableCurrency<Self::AccountId>;
+    type Currency: ReservableCurrency<Self::AccountId> + Currency<Self::AccountId>;
     // type Congress: collective::Trait<collective::Instance1>;
 }
 
@@ -95,6 +96,8 @@ pub enum ProposalState {
     Voting,
     Approved,
     Rejected,
+    ApprovedClosed,
+    RejectedClosed,
 }
 
 impl Default for ProposalState {
@@ -300,13 +303,31 @@ decl_module! {
         }
 
         #[weight = 10]
-        fn receive_rewards(origin, id: u64) {
-
+        fn receive_rewards(origin, id: u64) -> DispatchResult {
+            let user = ensure_signed(origin)?;
+            let proposal = Self::proposal(id).ok_or(Error::<T>::ProposalNotFound)?;
+            let is_state_for_rewards =
+                proposal.state == ProposalState::Approved || proposal.state == ProposalState::Rejected;
+            ensure!(
+                is_state_for_rewards,
+                Error::<T>::StateNotForRewards
+            );
+            ensure!(Self::voting(id).contains(&user), Error::<T>::NoVote);
+            let stake = Self::staking(&user).ok_or(Error::<T>::NoneStaking)?;
+            let goals = Self::get_goals_from_staking(&stake).saturated_into::<BalanceOf<T>>();
+            let total_goals = (proposal.vote_goals.0 + proposal.vote_goals.1)
+                .saturated_into::<BalanceOf<T>>();
+            let reward = TOTAL_REWARDS.saturated_into::<BalanceOf<T>>() * goals / total_goals;
+            T::Currency::deposit_into_existing(&user, reward)?;
+            Ok(())
         }
 
         #[weight = 10]
-        fn lock_balance(origin, age_idx: u8, amount: BalanceOf<T>) {
-
+        fn stake(origin, amount: BalanceOf<T>, age_idx: u8) -> DispatchResult {
+            let user = ensure_signed(origin)?;
+            ensure!(!Staking::<T>::contains_key(&user), Error::<T>::AlreadyStaked);
+            Staking::<T>::insert(user, (amount, age_idx));
+            Ok(())
         }
 
         fn on_finalize() {
@@ -317,6 +338,7 @@ decl_module! {
 }
 
 impl<T: Trait> Module<T> {
+
     fn get_goals_from_staking(stake: &(BalanceOf<T>, u8)) -> u64 {
         let balance = stake.0;
         let balance = balance.saturated_into::<u64>();
@@ -423,11 +445,16 @@ decl_error! {
         NotInCollective,
         /// You cannot receive rewards now.
         CannotReceiveRewards,
-        /// Rewards expired.
-        RewardsExpired,
         /// None staking for voting.
         NoneStaking,
         /// Invalid vote age index.
         InvalidVoteAge,
+        /// You have already staked.
+        AlreadyStaked,
+        /// You have not voted.
+        NoVote,
+        /// You cannot receive rewards now
+        /// because proposal state is not allowed.
+        StateNotForRewards,
     }
 }
