@@ -112,6 +112,8 @@ decl_storage! {
         pub Reviewing get(fn reviewing): map hasher(twox_64_concat) u64 => Vec<T::AccountId>;
 
         pub Voting get(fn voting): map hasher(twox_64_concat) u64 => Vec<T::AccountId>;
+        // (BalanceOf<T>, usize) = (staking, AGE_DAY index)
+        pub Staking get(fn staking): map hasher(twox_64_concat) T::AccountId => Option<(BalanceOf<T>, u8)>;
 
         pub IdGenerator get(fn id_generator): u64 = 0;
     }
@@ -262,8 +264,13 @@ decl_module! {
                 reviewers.push(member);
                 Ok(())
             })?;
-
-
+            Proposals::<T>::mutate(id, |p| {
+                if stand {
+                    p.unwrap().review_goals.0 += 1;
+                } else {
+                    p.unwrap().review_goals.1 += 1;
+                }
+            });
             Ok(())
         }
 
@@ -277,12 +284,29 @@ decl_module! {
             );
             Voting::<T>::try_mutate(id, |voters| -> DispatchResult {
                 ensure!(!(&*voters).contains(&user), Error::<T>::AlreadyVote);
-                voters.push(user);
-                // todo: add goals
+                voters.push(user.clone());
                 Ok(())
             })?;
-
+            let stake = Self::staking(&user).ok_or(Error::<T>::NoneStaking)?;
+            let goals = Self::get_goals_from_staking(&stake);
+            Proposals::<T>::mutate(id, |p| {
+                if stand {
+                    p.unwrap().vote_goals.0 += goals;
+                } else {
+                    p.unwrap().vote_goals.1 += goals;
+                }
+            });
             Ok(())
+        }
+
+        #[weight = 10]
+        fn receive_rewards(origin, id: u64) {
+
+        }
+
+        #[weight = 10]
+        fn lock_balance(origin, age_idx: u8, amount: BalanceOf<T>) {
+
         }
 
         fn on_finalize() {
@@ -293,6 +317,14 @@ decl_module! {
 }
 
 impl<T: Trait> Module<T> {
+    fn get_goals_from_staking(stake: &(BalanceOf<T>, u8)) -> u64 {
+        let balance = stake.0;
+        let balance = balance.saturated_into::<u64>();
+        let age_idx = stake.1;
+        let vote_age = AGE_DAY.get(age_idx as usize).unwrap().0;
+        balance * vote_age
+    }
+
     fn get_now_ts() -> u64 {
         let now = <timestamp::Module<T>>::get();
         <T::Moment as TryInto<u64>>::try_into(now).ok().unwrap()
@@ -389,5 +421,13 @@ decl_error! {
         AlreadyVote,
         /// You are not a member of collective.
         NotInCollective,
+        /// You cannot receive rewards now.
+        CannotReceiveRewards,
+        /// Rewards expired.
+        RewardsExpired,
+        /// None staking for voting.
+        NoneStaking,
+        /// Invalid vote age index.
+        InvalidVoteAge,
     }
 }
