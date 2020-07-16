@@ -266,9 +266,9 @@ decl_module! {
             })?;
             Proposals::<T>::mutate(id, |p| {
                 if stand {
-                    p.unwrap().review_goals.0 += 1;
+                    p.as_mut().unwrap().review_goals.0 += 1;
                 } else {
-                    p.unwrap().review_goals.1 += 1;
+                    p.as_mut().unwrap().review_goals.1 += 1;
                 }
             });
             Ok(())
@@ -291,9 +291,9 @@ decl_module! {
             let goals = Self::get_goals_from_staking(&stake);
             Proposals::<T>::mutate(id, |p| {
                 if stand {
-                    p.unwrap().vote_goals.0 += goals;
+                    p.as_mut().unwrap().vote_goals.0 += goals;
                 } else {
-                    p.unwrap().vote_goals.1 += goals;
+                    p.as_mut().unwrap().vote_goals.1 += goals;
                 }
             });
             Ok(())
