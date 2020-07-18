@@ -3,11 +3,12 @@
 extern crate frame_system as system;
 extern crate pallet_collective as collective;
 extern crate pallet_timestamp as timestamp;
+extern crate pallet_treasury as treasury;
 
 use crate::constants::{congress::*, referendum::*};
 use codec::{Decode, Encode};
 use collective::Contain;
-use frame_support::traits::{BalanceStatus, Currency, ReservableCurrency};
+use frame_support::traits::{Currency, ReservableCurrency};
 use frame_support::{
     debug, decl_error, decl_event, decl_module, decl_storage, dispatch::DispatchResult, ensure,
     storage::IterableStorageMap, StorageMap, StorageValue,
@@ -16,6 +17,7 @@ use sp_runtime::traits::SaturatedConversion;
 use sp_std::convert::TryInto;
 use sp_std::vec::Vec;
 use system::{ensure_root, ensure_signed};
+use self::treasury::AccountGetter;
 
 pub type BalanceOf<T> =
     <<T as Trait>::Currency as Currency<<T as frame_system::Trait>::AccountId>>::Balance;
@@ -28,6 +30,7 @@ pub trait Trait: system::Trait + timestamp::Trait {
     type Event: From<Event<Self>> + Into<<Self as system::Trait>::Event>;
     type Currency: ReservableCurrency<Self::AccountId> + Currency<Self::AccountId>;
     type CouncilMembers: collective::Contain<Self::AccountId>;
+    type Treasury: treasury::AccountGetter<Self::AccountId>;
 }
 
 #[derive(Encode, Decode, Clone, Default, Debug, PartialEq, Eq)]
@@ -60,6 +63,7 @@ pub struct Proposal<AccountId, Balance> {
     /// Number = VoteAge * TokenAmount
     pub vote_goals: (u64, u64),
     /// When the state of proposal changes, update this timestamp.
+    pub rewards_remainder: Balance,
     pub timestamp: u64,
 }
 
@@ -156,6 +160,7 @@ decl_module! {
                 state: ProposalState::Pending,
                 review_goals: ZERO_GOALS,
                 vote_goals: ZERO_GOALS,
+                rewards_remainder: TOTAL_REWARDS.saturated_into::<BalanceOf<T>>(),
                 timestamp: now,
             };
             Proposals::<T>::insert(id, new_proposal);
@@ -189,6 +194,7 @@ decl_module! {
                 state: ProposalState::Pending,
                 review_goals: ZERO_GOALS,
                 vote_goals: ZERO_GOALS,
+                rewards_remainder: TOTAL_REWARDS.saturated_into::<BalanceOf<T>>(),
                 timestamp: now,
             };
             Self::update_proposal(id, new_proposal)
@@ -319,7 +325,8 @@ decl_module! {
             let total_goals = (proposal.vote_goals.0 + proposal.vote_goals.1)
                 .saturated_into::<BalanceOf<T>>();
             let reward = TOTAL_REWARDS.saturated_into::<BalanceOf<T>>() * goals / total_goals;
-            T::Currency::deposit_into_existing(&user, reward)?;
+            Self::deposit_into_existing(&user, reward)?;
+            Proposals::<T>::mutate(id, |p| p.as_mut().unwrap().rewards_remainder -= reward);
             Ok(())
         }
 
@@ -349,6 +356,12 @@ decl_module! {
 }
 
 impl<T: Trait> Module<T> {
+    fn deposit_into_existing(account: &T::AccountId, amount: BalanceOf<T>) -> DispatchResult {
+        T::Currency::deposit_into_existing(account, amount)?;
+        T::Currency::issue(amount);
+        Ok(())
+    }
+
     fn deal_proposal(id: ProposalId, proposal: Proposal<T::AccountId, BalanceOf<T>>, now: u64) {
         let duration = now - proposal.timestamp;
         match proposal.state {
@@ -467,7 +480,8 @@ impl<T: Trait> Module<T> {
                 proposal.state = ProposalState::RejectedClosed
             }
             proposal.timestamp = now;
-            // TODO: reward to treasury
+            let treasury_account = T::Treasury::get_account_id();
+            Self::deposit_into_existing(&treasury_account, proposal.rewards_remainder);
             Proposals::<T>::insert(id, proposal);
         }
     }
@@ -530,6 +544,7 @@ impl<T: Trait> Module<T> {
             state: ProposalState::Pending,
             review_goals: ZERO_GOALS,
             vote_goals: ZERO_GOALS,
+            rewards_remainder: TOTAL_REWARDS.saturated_into::<BalanceOf<T>>(),
             timestamp,
         }
     }

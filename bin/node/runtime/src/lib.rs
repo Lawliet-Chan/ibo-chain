@@ -848,6 +848,7 @@ impl ibo::Trait for Runtime {
     type Event = Event;
     type Currency = Balances;
     type CouncilMembers = Council;
+    type Treasury = Treasury;
 }
 
 construct_runtime!(

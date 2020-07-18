@@ -294,6 +294,16 @@ decl_error! {
 	}
 }
 
+pub trait AccountGetter<AccountId> {
+	fn get_account_id() -> AccountId;
+}
+
+impl<T: Trait> AccountGetter<T::AccountId> for Module<T> {
+	fn get_account_id() -> T::AccountId {
+		Self::account_id()
+	}
+}
+
 decl_module! {
 	pub struct Module<T: Trait> for enum Call where origin: T::Origin {
 		/// Fraction of a proposal's value that should be bonded in order to place the proposal.
