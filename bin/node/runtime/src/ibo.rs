@@ -10,11 +10,12 @@ use frame_support::traits::{BalanceStatus, Currency, ReservableCurrency};
 use frame_support::{
     debug, decl_error, decl_event, decl_module, decl_storage, dispatch::DispatchResult, ensure,
     StorageMap, StorageValue,
+    storage::IterableStorageMap,
 };
 use sp_runtime::traits::SaturatedConversion;
 use sp_std::convert::TryInto;
 use sp_std::vec::Vec;
-use system::ensure_signed;
+use system::{ensure_root, ensure_signed};
 
 pub type BalanceOf<T> =
     <<T as Trait>::Currency as Currency<<T as frame_system::Trait>::AccountId>>::Balance;
@@ -330,14 +331,122 @@ decl_module! {
             Ok(())
         }
 
+        #[weight = 0]
+        fn burn(origin, burn_amount: BalanceOf<T>) {
+            ensure_root(origin)?;
+            T::Currency::burn(burn_amount);
+        }
+
         fn on_finalize() {
             let now = Self::get_now_ts();
+            let mut iter = Proposals::<T>::iter();
+            while let Some((_, mut proposal)) = iter.next() {
+                Self::deal_proposal(&mut proposal, now);
+            }
         }
 
     }
 }
 
 impl<T: Trait> Module<T> {
+    fn deal_proposal(proposal: &mut Proposal<T::AccountId, BalanceOf<T>>, now: u64) {
+        let duration = now - proposal.timestamp;
+        match proposal.state {
+            ProposalState::Pending => {
+                if duration > ALLOW_MODIFY_DURATION {
+                    proposal.state = ProposalState::Reviewing;
+                    proposal.timestamp = now;
+                }
+            }
+            ProposalState::Reviewing => Self::check_proposal_reviewed(proposal, duration, now),
+            ProposalState::Voting => Self::check_proposal_voted(proposal, duration, now),
+            ProposalState::Approved => Self::check_proposal_closed(proposal, duration, now),
+            ProposalState::Rejected => Self::check_proposal_closed(proposal, duration, now),
+            _ => {}
+        }
+    }
+
+    fn check_proposal_reviewed(
+        proposal: &mut Proposal<T::AccountId, BalanceOf<T>>,
+        duration: u64,
+        now: u64,
+    ) {
+        if duration > REVIEW_DURATION {
+            let supporters_goals = proposal.review_goals.0;
+            let opponents_goals = proposal.review_goals.1;
+            if proposal.proposal_type == ProposalType::Rise
+                || proposal.proposal_type == ProposalType::Fall
+            {
+                proposal.state = if supporters_goals >= 2 * opponents_goals {
+                    ProposalState::Approved
+                } else {
+                    ProposalState::Rejected
+                };
+            }
+
+            if proposal.proposal_type == ProposalType::Delist {
+                proposal.state = if supporters_goals >= opponents_goals {
+                    ProposalState::Voting
+                } else {
+                    ProposalState::Rejected
+                };
+            }
+
+            if proposal.proposal_type == ProposalType::List {
+                proposal.state = if supporters_goals >= 2 * opponents_goals {
+                    ProposalState::Voting
+                } else {
+                    ProposalState::Rejected
+                };
+            }
+            proposal.timestamp = now;
+        }
+    }
+
+    fn check_proposal_voted(
+        proposal: &mut Proposal<T::AccountId, BalanceOf<T>>,
+        duration: u64,
+        now: u64,
+    ) {
+        if duration > VOTE_DURATION {
+            let supporters_goals = proposal.vote_goals.0;
+            let opponents_goals = proposal.vote_goals.1;
+            if proposal.proposal_type == ProposalType::List {
+                proposal.state = if supporters_goals >= 2 * opponents_goals {
+                    ProposalState::Approved
+                } else {
+                    ProposalState::Rejected
+                };
+            };
+
+            if proposal.proposal_type == ProposalType::Delist {
+                proposal.state = if supporters_goals >= opponents_goals {
+                    ProposalState::Approved
+                } else {
+                    ProposalState::Rejected
+                };
+            }
+
+            proposal.timestamp = now;
+        }
+    }
+
+    fn check_proposal_closed(
+        proposal: &mut Proposal<T::AccountId, BalanceOf<T>>,
+        duration: u64,
+        now: u64,
+    ) {
+        if duration > RECEIVE_REWARDS_DURATION {
+            if proposal.state == ProposalState::Approved {
+                proposal.state = ProposalState::ApprovedClosed
+            }
+            if proposal.state == ProposalState::Rejected {
+                proposal.state = ProposalState::RejectedClosed
+            }
+            proposal.timestamp = now;
+            // TODO: reward to treasury
+        }
+    }
 
     fn get_goals_from_staking(stake: &(BalanceOf<T>, u8)) -> u64 {
         let balance = stake.0;
