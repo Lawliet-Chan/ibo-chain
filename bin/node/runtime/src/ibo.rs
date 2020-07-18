@@ -16,6 +16,7 @@ use sp_runtime::traits::SaturatedConversion;
 use sp_std::convert::TryInto;
 use sp_std::vec::Vec;
 use system::{ensure_root, ensure_signed};
+use collective::Contain;
 
 pub type BalanceOf<T> =
     <<T as Trait>::Currency as Currency<<T as frame_system::Trait>::AccountId>>::Balance;
@@ -26,7 +27,7 @@ pub const TOTAL_REWARDS: u64 = 100_000;
 pub trait Trait: system::Trait + timestamp::Trait {
     type Event: From<Event<Self>> + Into<<Self as system::Trait>::Event>;
     type Currency: ReservableCurrency<Self::AccountId> + Currency<Self::AccountId>;
-    // type Congress: collective::Trait<collective::Instance1>;
+    type CouncilMembers: collective::Contain<Self::AccountId>;
 }
 
 #[derive(Encode, Decode, Clone, Default, Debug, PartialEq, Eq)]
@@ -257,7 +258,7 @@ decl_module! {
         #[weight = 10]
         fn review_proposal(origin, id: u64, stand: bool) -> DispatchResult {
             let member = ensure_signed(origin)?;
-            // ensure!(<collective::Module<T>>::is_member(&member), Error::<T>::NotInCollective);
+            ensure!(T::CouncilMembers::contains(&member), Error::<T>::NotInCollective);
             let proposal = Self::proposal(id).ok_or(Error::<T>::ProposalNotFound)?;
             ensure!(
                 proposal.state == ProposalState::Reviewing,

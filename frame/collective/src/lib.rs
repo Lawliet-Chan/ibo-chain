@@ -74,7 +74,7 @@ pub type MemberCount = u32;
 /// NOTE:
 /// + Benchmarks will need to be re-run and weights adjusted if this changes.
 /// + This pallet assumes that dependents keep to the limit without enforcing it.
-pub const MAX_MEMBERS: MemberCount = 100;
+pub const MAX_MEMBERS: MemberCount = 23;
 
 pub trait Trait<I: Instance=DefaultInstance>: frame_system::Trait {
 	/// The outer origin type.
@@ -738,6 +738,16 @@ decl_module! {
 			let actual_weight = Self::do_disapprove_proposal(proposal_hash);
 			Ok(Some(actual_weight).into())
 		}
+	}
+}
+
+pub trait Contain<AccountId> {
+	fn contains(who: &AccountId) -> bool;
+}
+
+impl<T: Trait<I>, I: Instance> Contain<T::AccountId> for Module<T, I> {
+	fn contains(who: &T::AccountId) -> bool {
+		Self::is_member(who)
 	}
 }
 

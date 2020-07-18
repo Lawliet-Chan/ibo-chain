@@ -847,7 +847,7 @@ impl pallet_vesting::Trait for Runtime {
 impl ibo::Trait for Runtime {
     type Event = Event;
     type Currency = Balances;
-    // type Congress = Council;
+    type CouncilMembers = Council;
 }
 
 construct_runtime!(
