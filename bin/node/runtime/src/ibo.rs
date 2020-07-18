@@ -5,6 +5,7 @@ extern crate pallet_collective as collective;
 extern crate pallet_timestamp as timestamp;
 extern crate pallet_treasury as treasury;
 
+use self::treasury::AccountGetter;
 use crate::constants::{congress::*, referendum::*};
 use codec::{Decode, Encode};
 use collective::Contain;
@@ -17,7 +18,6 @@ use sp_runtime::traits::SaturatedConversion;
 use sp_std::convert::TryInto;
 use sp_std::vec::Vec;
 use system::{ensure_root, ensure_signed};
-use self::treasury::AccountGetter;
 
 pub type BalanceOf<T> =
     <<T as Trait>::Currency as Currency<<T as frame_system::Trait>::AccountId>>::Balance;
