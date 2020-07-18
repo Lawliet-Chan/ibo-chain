@@ -20,6 +20,7 @@ use collective::Contain;
 
 pub type BalanceOf<T> =
     <<T as Trait>::Currency as Currency<<T as frame_system::Trait>::AccountId>>::Balance;
+pub type ProposalId = u32;
 
 pub const ZERO_GOALS: (u64, u64) = (0, 0);
 pub const TOTAL_REWARDS: u64 = 100_000;
@@ -110,17 +111,17 @@ impl Default for ProposalState {
 
 decl_storage! {
     trait Store for Module<T: Trait> as Ibo {
-        pub Proposals get(fn proposal): map hasher(twox_64_concat) u64 => Option<Proposal<T::AccountId, BalanceOf<T>>>;
+        pub Proposals get(fn proposal): map hasher(twox_64_concat) ProposalId => Option<Proposal<T::AccountId, BalanceOf<T>>>;
 
         pub Tokens get(fn token): map hasher(twox_64_concat) Vec<u8> => Option<TokenInfo<T::AccountId, BalanceOf<T>>>;
 
-        pub Reviewing get(fn reviewing): map hasher(twox_64_concat) u64 => Vec<T::AccountId>;
+        pub Reviewing get(fn reviewing): map hasher(twox_64_concat) ProposalId => Vec<T::AccountId>;
 
-        pub Voting get(fn voting): map hasher(twox_64_concat) u64 => Vec<T::AccountId>;
+        pub Voting get(fn voting): map hasher(twox_64_concat) ProposalId => Vec<T::AccountId>;
         // (BalanceOf<T>, usize) = (staking, AGE_DAY index)
         pub Staking get(fn staking): map hasher(twox_64_concat) T::AccountId => Option<(BalanceOf<T>, u8)>;
 
-        pub IdGenerator get(fn id_generator): u64 = 0;
+        pub IdGenerator get(fn id_generator): ProposalId = 0;
     }
 }
 
@@ -167,7 +168,7 @@ decl_module! {
         #[weight = 100]
         fn update_list_proposal(
             origin,
-            id: u64,
+            id: ProposalId,
             official_website_url: Vec<u8>,
             token_icon_url: Vec<u8>,
             token_symbol: Vec<u8>,
@@ -196,7 +197,7 @@ decl_module! {
         }
 
         #[weight = 100]
-        fn delete_list_proposal(origin, id: u64) -> DispatchResult {
+        fn delete_list_proposal(origin, id: ProposalId) -> DispatchResult {
             let _ = ensure_signed(origin)?;
             Self::remove_proposal(id)
         }
@@ -214,7 +215,7 @@ decl_module! {
         }
 
         #[weight = 100]
-        fn delete_delist_proposal(origin, id: u64) -> DispatchResult {
+        fn delete_delist_proposal(origin, id: ProposalId) -> DispatchResult {
             let _ = ensure_signed(origin)?;
             Self::remove_proposal(id)
         }
@@ -232,7 +233,7 @@ decl_module! {
         }
 
         #[weight = 50]
-        fn delete_rise_proposal(origin, id: u64) -> DispatchResult {
+        fn delete_rise_proposal(origin, id: ProposalId) -> DispatchResult {
             let _ = ensure_signed(origin)?;
             Self::remove_proposal(id)
         }
@@ -250,13 +251,13 @@ decl_module! {
         }
 
         #[weight = 50]
-        fn delete_fall_proposal(origin, id: u64) -> DispatchResult {
+        fn delete_fall_proposal(origin, id: ProposalId) -> DispatchResult {
             let _ = ensure_signed(origin)?;
             Self::remove_proposal(id)
         }
 
         #[weight = 10]
-        fn review_proposal(origin, id: u64, stand: bool) -> DispatchResult {
+        fn review_proposal(origin, id: ProposalId, stand: bool) -> DispatchResult {
             let member = ensure_signed(origin)?;
             ensure!(T::CouncilMembers::contains(&member), Error::<T>::NotInCollective);
             let proposal = Self::proposal(id).ok_or(Error::<T>::ProposalNotFound)?;
@@ -280,7 +281,7 @@ decl_module! {
         }
 
         #[weight = 10]
-        fn vote_proposal(origin, id: u64, stand: bool) -> DispatchResult {
+        fn vote_proposal(origin, id: ProposalId, stand: bool) -> DispatchResult {
             let user = ensure_signed(origin)?;
             let proposal = Self::proposal(id).ok_or(Error::<T>::ProposalNotFound)?;
             ensure!(
@@ -305,8 +306,9 @@ decl_module! {
         }
 
         #[weight = 10]
-        fn receive_rewards(origin, id: u64) -> DispatchResult {
+        fn receive_rewards(origin, id: ProposalId) -> DispatchResult {
             let user = ensure_signed(origin)?;
+            ensure!(Self::voting(id).contains(&user), Error::<T>::NoVote);
             let proposal = Self::proposal(id).ok_or(Error::<T>::ProposalNotFound)?;
             let is_state_for_rewards =
                 proposal.state == ProposalState::Approved || proposal.state == ProposalState::Rejected;
@@ -314,7 +316,6 @@ decl_module! {
                 is_state_for_rewards,
                 Error::<T>::StateNotForRewards
             );
-            ensure!(Self::voting(id).contains(&user), Error::<T>::NoVote);
             let stake = Self::staking(&user).ok_or(Error::<T>::NoneStaking)?;
             let goals = Self::get_goals_from_staking(&stake).saturated_into::<BalanceOf<T>>();
             let total_goals = (proposal.vote_goals.0 + proposal.vote_goals.1)
@@ -463,7 +464,7 @@ impl<T: Trait> Module<T> {
     }
 
     fn update_proposal(
-        id: u64,
+        id: ProposalId,
         new_proposal: Proposal<T::AccountId, BalanceOf<T>>,
     ) -> DispatchResult {
         let proposal: Proposal<T::AccountId, BalanceOf<T>> =
@@ -476,7 +477,7 @@ impl<T: Trait> Module<T> {
         Ok(())
     }
 
-    fn remove_proposal(id: u64) -> DispatchResult {
+    fn remove_proposal(id: ProposalId) -> DispatchResult {
         let proposal: Proposal<T::AccountId, BalanceOf<T>> =
             Self::proposal(id).ok_or(Error::<T>::ProposalNotFound)?;
         ensure!(
@@ -511,7 +512,7 @@ impl<T: Trait> Module<T> {
         }
     }
 
-    fn generate_id() -> u64 {
+    fn generate_id() -> ProposalId {
         let mut id = 0;
         IdGenerator::mutate(|i| {
             id = *i;
@@ -528,7 +529,7 @@ decl_event! {
         {
             Vote(AccountId),
 
-            CreateProposal(u64),
+            CreateProposal(ProposalId),
         }
 }
 
