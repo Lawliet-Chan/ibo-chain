@@ -6,17 +6,16 @@ extern crate pallet_timestamp as timestamp;
 
 use crate::constants::{congress::*, referendum::*};
 use codec::{Decode, Encode};
+use collective::Contain;
 use frame_support::traits::{BalanceStatus, Currency, ReservableCurrency};
 use frame_support::{
     debug, decl_error, decl_event, decl_module, decl_storage, dispatch::DispatchResult, ensure,
-    StorageMap, StorageValue,
-    storage::IterableStorageMap,
+    storage::IterableStorageMap, StorageMap, StorageValue,
 };
 use sp_runtime::traits::SaturatedConversion;
 use sp_std::convert::TryInto;
 use sp_std::vec::Vec;
 use system::{ensure_root, ensure_signed};
-use collective::Contain;
 
 pub type BalanceOf<T> =
     <<T as Trait>::Currency as Currency<<T as frame_system::Trait>::AccountId>>::Balance;
@@ -32,8 +31,7 @@ pub trait Trait: system::Trait + timestamp::Trait {
 }
 
 #[derive(Encode, Decode, Clone, Default, Debug, PartialEq, Eq)]
-pub struct TokenInfo<AccountId, Balance> {
-    pub proposer: AccountId,
+pub struct TokenInfo<Balance> {
     pub official_website_url: Vec<u8>,
     pub token_icon_url: Vec<u8>,
     pub token_symbol: Vec<u8>,
@@ -113,7 +111,7 @@ decl_storage! {
     trait Store for Module<T: Trait> as Ibo {
         pub Proposals get(fn proposal): map hasher(twox_64_concat) ProposalId => Option<Proposal<T::AccountId, BalanceOf<T>>>;
 
-        pub Tokens get(fn token): map hasher(twox_64_concat) Vec<u8> => Option<TokenInfo<T::AccountId, BalanceOf<T>>>;
+        pub Tokens get(fn token): map hasher(twox_64_concat) Vec<u8> => Option<TokenInfo<BalanceOf<T>>>;
 
         pub Reviewing get(fn reviewing): map hasher(twox_64_concat) ProposalId => Vec<T::AccountId>;
 
@@ -342,8 +340,8 @@ decl_module! {
         fn on_finalize() {
             let now = Self::get_now_ts();
             let mut iter = Proposals::<T>::iter();
-            while let Some((_, mut proposal)) = iter.next() {
-                Self::deal_proposal(&mut proposal, now);
+            while let Some((id, proposal)) = iter.next() {
+                Self::deal_proposal(id, proposal, now);
             }
         }
 
@@ -351,25 +349,34 @@ decl_module! {
 }
 
 impl<T: Trait> Module<T> {
-    fn deal_proposal(proposal: &mut Proposal<T::AccountId, BalanceOf<T>>, now: u64) {
+    fn deal_proposal(id: ProposalId, proposal: Proposal<T::AccountId, BalanceOf<T>>, now: u64) {
         let duration = now - proposal.timestamp;
         match proposal.state {
-            ProposalState::Pending => {
-                if duration > ALLOW_MODIFY_DURATION {
-                    proposal.state = ProposalState::Reviewing;
-                    proposal.timestamp = now;
-                }
-            }
-            ProposalState::Reviewing => Self::check_proposal_reviewed(proposal, duration, now),
-            ProposalState::Voting => Self::check_proposal_voted(proposal, duration, now),
-            ProposalState::Approved => Self::check_proposal_closed(proposal, duration, now),
-            ProposalState::Rejected => Self::check_proposal_closed(proposal, duration, now),
+            ProposalState::Pending => Self::check_proposal_pending(id, proposal, duration, now),
+            ProposalState::Reviewing => Self::check_proposal_reviewed(id, proposal, duration, now),
+            ProposalState::Voting => Self::check_proposal_voted(id, proposal, duration, now),
+            ProposalState::Approved => Self::check_proposal_closed(id, proposal, duration, now),
+            ProposalState::Rejected => Self::check_proposal_closed(id, proposal, duration, now),
             _ => {}
         }
     }
 
+    fn check_proposal_pending(
+        id: ProposalId,
+        mut proposal: Proposal<T::AccountId, BalanceOf<T>>,
+        duration: u64,
+        now: u64,
+    ) {
+        if duration > ALLOW_MODIFY_DURATION {
+            proposal.state = ProposalState::Reviewing;
+            proposal.timestamp = now;
+            Proposals::<T>::insert(id, proposal);
+        }
+    }
+
     fn check_proposal_reviewed(
-        proposal: &mut Proposal<T::AccountId, BalanceOf<T>>,
+        id: ProposalId,
+        mut proposal: Proposal<T::AccountId, BalanceOf<T>>,
         duration: u64,
         now: u64,
     ) {
@@ -380,6 +387,10 @@ impl<T: Trait> Module<T> {
                 || proposal.proposal_type == ProposalType::Fall
             {
                 proposal.state = if supporters_goals >= 2 * opponents_goals {
+                    Tokens::<T>::insert(
+                        &proposal.token_symbol,
+                        Self::clone_from_proposal(proposal.clone()),
+                    );
                     ProposalState::Approved
                 } else {
                     ProposalState::Rejected
@@ -402,11 +413,14 @@ impl<T: Trait> Module<T> {
                 };
             }
             proposal.timestamp = now;
+
+            Proposals::<T>::insert(id, proposal);
         }
     }
 
     fn check_proposal_voted(
-        proposal: &mut Proposal<T::AccountId, BalanceOf<T>>,
+        id: ProposalId,
+        mut proposal: Proposal<T::AccountId, BalanceOf<T>>,
         duration: u64,
         now: u64,
     ) {
@@ -415,6 +429,10 @@ impl<T: Trait> Module<T> {
             let opponents_goals = proposal.vote_goals.1;
             if proposal.proposal_type == ProposalType::List {
                 proposal.state = if supporters_goals >= 2 * opponents_goals {
+                    Tokens::<T>::insert(
+                        &proposal.token_symbol,
+                        Self::clone_from_proposal(proposal.clone()),
+                    );
                     ProposalState::Approved
                 } else {
                     ProposalState::Rejected
@@ -423,6 +441,7 @@ impl<T: Trait> Module<T> {
 
             if proposal.proposal_type == ProposalType::Delist {
                 proposal.state = if supporters_goals >= opponents_goals {
+                    Tokens::<T>::remove(&proposal.token_symbol);
                     ProposalState::Approved
                 } else {
                     ProposalState::Rejected
@@ -430,11 +449,13 @@ impl<T: Trait> Module<T> {
             }
 
             proposal.timestamp = now;
+            Proposals::<T>::insert(id, proposal);
         }
     }
 
     fn check_proposal_closed(
-        proposal: &mut Proposal<T::AccountId, BalanceOf<T>>,
+        id: ProposalId,
+        mut proposal: Proposal<T::AccountId, BalanceOf<T>>,
         duration: u64,
         now: u64,
     ) {
@@ -447,6 +468,7 @@ impl<T: Trait> Module<T> {
             }
             proposal.timestamp = now;
             // TODO: reward to treasury
+            Proposals::<T>::insert(id, proposal);
         }
     }
 
@@ -493,7 +515,7 @@ impl<T: Trait> Module<T> {
         proposal_type: ProposalType,
         target_board: BoardType,
         timestamp: u64,
-        token_info: TokenInfo<T::AccountId, BalanceOf<T>>,
+        token_info: TokenInfo<BalanceOf<T>>,
     ) -> Proposal<T::AccountId, BalanceOf<T>> {
         Proposal {
             proposer,
@@ -509,6 +531,19 @@ impl<T: Trait> Module<T> {
             review_goals: ZERO_GOALS,
             vote_goals: ZERO_GOALS,
             timestamp,
+        }
+    }
+
+    fn clone_from_proposal(
+        proposal: Proposal<T::AccountId, BalanceOf<T>>,
+    ) -> TokenInfo<BalanceOf<T>> {
+        TokenInfo {
+            official_website_url: proposal.official_website_url,
+            token_icon_url: proposal.token_icon_url,
+            token_symbol: proposal.token_symbol,
+            total_issuance: proposal.total_issuance,
+            total_circulation: proposal.total_circulation,
+            current_board: proposal.target_board,
         }
     }
 
