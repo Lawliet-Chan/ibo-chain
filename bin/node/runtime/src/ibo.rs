@@ -121,7 +121,7 @@ decl_storage! {
 
         pub Voting get(fn voting): map hasher(twox_64_concat) ProposalId => Vec<T::AccountId>;
         // (BalanceOf<T>, usize) = (staking, AGE_DAY index)
-        pub Staking get(fn staking): map hasher(twox_64_concat) T::AccountId => Option<(BalanceOf<T>, u8)>;
+        pub Staking get(fn staking): map hasher(twox_64_concat) T::AccountId => Option<(ProposalId, BalanceOf<T>, u8, u64)>;
 
         pub IdGenerator get(fn id_generator): ProposalId = 0;
     }
@@ -298,7 +298,8 @@ decl_module! {
                 Ok(())
             })?;
             let stake = Self::staking(&user).ok_or(Error::<T>::NoneStaking)?;
-            let goals = Self::get_goals_from_staking(&stake);
+            ensure!(stake.0 == id, Error::<T>::StakeNotMatch);
+            let goals = Self::get_goals_from_staking(stake.1, stake.2);
             Proposals::<T>::mutate(id, |p| {
                 if stand {
                     p.as_mut().unwrap().vote_goals.0 += goals;
@@ -321,7 +322,8 @@ decl_module! {
                 Error::<T>::StateNotForRewards
             );
             let stake = Self::staking(&user).ok_or(Error::<T>::NoneStaking)?;
-            let goals = Self::get_goals_from_staking(&stake).saturated_into::<BalanceOf<T>>();
+            ensure!(stake.0 == id, Error::<T>::StakeNotMatch);
+            let goals = Self::get_goals_from_staking(stake.1, stake.2).saturated_into::<BalanceOf<T>>();
             let total_goals = (proposal.vote_goals.0 + proposal.vote_goals.1)
                 .saturated_into::<BalanceOf<T>>();
             let reward = TOTAL_REWARDS.saturated_into::<BalanceOf<T>>() * goals / total_goals;
@@ -331,14 +333,31 @@ decl_module! {
         }
 
         #[weight = 10]
-        fn stake(origin, amount: BalanceOf<T>, age_idx: u8) -> DispatchResult {
+        fn stake(origin, id: ProposalId, amount: BalanceOf<T>, age_idx: u8) -> DispatchResult {
             let user = ensure_signed(origin)?;
             ensure!(!Staking::<T>::contains_key(&user), Error::<T>::AlreadyStaked);
-            Staking::<T>::insert(user, (amount, age_idx));
+            T::Currency::reserve(&user, amount)?;
+            let now = Self::get_now_ts();
+            Staking::<T>::insert(user, (id, amount, age_idx, now));
             Ok(())
         }
 
-        #[weight = 0]
+        #[weight = 100]
+        fn unstake(origin) -> DispatchResult {
+            let user = ensure_signed(origin)?;
+            let stake = Self::staking(&user).ok_or(Error::<T>::NoneStaking)?;
+            let stake_amount = stake.1;
+            let age_idx = stake.2;
+            let stake_ts = stake.3;
+            let stake_days = AGE_DAY.get(age_idx as usize).unwrap().1;
+            let duration = Self::get_now_ts() - stake_ts;
+            ensure!(duration >= stake_days, Error::<T>::InStaking);
+            T::Currency::unreserve(&user, stake_amount);
+            Staking::<T>::remove(&user);
+            Ok(())
+        }
+
+        #[weight = 10]
         fn burn(origin, burn_amount: BalanceOf<T>) {
             let user = ensure_signed(origin)?;
             T::Currency::slash(&user, burn_amount);
@@ -486,12 +505,10 @@ impl<T: Trait> Module<T> {
         }
     }
 
-    fn get_goals_from_staking(stake: &(BalanceOf<T>, u8)) -> u64 {
-        let balance = stake.0;
-        let balance = balance.saturated_into::<u64>();
-        let age_idx = stake.1;
+    fn get_goals_from_staking(stake: BalanceOf<T>, age_idx :u8) -> u64 {
+        let stake = stake.saturated_into::<u64>();
         let vote_age = AGE_DAY.get(age_idx as usize).unwrap().0;
-        balance * vote_age
+        stake * vote_age
     }
 
     fn get_now_ts() -> u64 {
@@ -617,5 +634,9 @@ decl_error! {
         /// You cannot receive rewards now
         /// because proposal state is not allowed.
         StateNotForRewards,
+        /// The stake does not match the proposal.
+        StakeNotMatch,
+        /// Your balance is still in staking time.
+        InStaking,
     }
 }
