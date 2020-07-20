@@ -182,7 +182,7 @@ decl_module! {
             let proposer = ensure_signed(origin)?;
             let now = Self::get_now_ts();
             let new_proposal = Proposal {
-                proposer,
+                proposer: proposer.clone(),
                 proposal_type: ProposalType::List,
                 official_website_url,
                 token_icon_url,
@@ -197,13 +197,13 @@ decl_module! {
                 rewards_remainder: TOTAL_REWARDS.saturated_into::<BalanceOf<T>>(),
                 timestamp: now,
             };
-            Self::update_proposal(id, new_proposal)
+            Self::update_proposal(id, proposer, new_proposal)
         }
 
         #[weight = 100]
         fn delete_list_proposal(origin, id: ProposalId) -> DispatchResult {
-            let _ = ensure_signed(origin)?;
-            Self::remove_proposal(id)
+            let proposer = ensure_signed(origin)?;
+            Self::remove_proposal(id, proposer)
         }
 
         #[weight = 200]
@@ -220,8 +220,8 @@ decl_module! {
 
         #[weight = 100]
         fn delete_delist_proposal(origin, id: ProposalId) -> DispatchResult {
-            let _ = ensure_signed(origin)?;
-            Self::remove_proposal(id)
+            let proposer = ensure_signed(origin)?;
+            Self::remove_proposal(id, proposer)
         }
 
         #[weight = 100]
@@ -238,8 +238,8 @@ decl_module! {
 
         #[weight = 50]
         fn delete_rise_proposal(origin, id: ProposalId) -> DispatchResult {
-            let _ = ensure_signed(origin)?;
-            Self::remove_proposal(id)
+            let proposer = ensure_signed(origin)?;
+            Self::remove_proposal(id, proposer)
         }
 
         #[weight = 100]
@@ -256,8 +256,8 @@ decl_module! {
 
         #[weight = 50]
         fn delete_fall_proposal(origin, id: ProposalId) -> DispatchResult {
-            let _ = ensure_signed(origin)?;
-            Self::remove_proposal(id)
+            let proposer = ensure_signed(origin)?;
+            Self::remove_proposal(id, proposer)
         }
 
         #[weight = 10]
@@ -505,7 +505,7 @@ impl<T: Trait> Module<T> {
         }
     }
 
-    fn get_goals_from_staking(stake: BalanceOf<T>, age_idx :u8) -> u64 {
+    fn get_goals_from_staking(stake: BalanceOf<T>, age_idx: u8) -> u64 {
         let stake = stake.saturated_into::<u64>();
         let vote_age = AGE_DAY.get(age_idx as usize).unwrap().0;
         stake * vote_age
@@ -518,10 +518,12 @@ impl<T: Trait> Module<T> {
 
     fn update_proposal(
         id: ProposalId,
+        proposer: T::AccountId,
         new_proposal: Proposal<T::AccountId, BalanceOf<T>>,
     ) -> DispatchResult {
         let proposal: Proposal<T::AccountId, BalanceOf<T>> =
             Self::proposal(id).ok_or(Error::<T>::ProposalNotFound)?;
+        ensure!(proposal.proposer == proposer, Error::<T>::NotYourProposal);
         ensure!(
             proposal.state == ProposalState::Pending,
             Error::<T>::ProposalCannotBeModified
@@ -530,9 +532,10 @@ impl<T: Trait> Module<T> {
         Ok(())
     }
 
-    fn remove_proposal(id: ProposalId) -> DispatchResult {
+    fn remove_proposal(id: ProposalId, proposer: T::AccountId) -> DispatchResult {
         let proposal: Proposal<T::AccountId, BalanceOf<T>> =
             Self::proposal(id).ok_or(Error::<T>::ProposalNotFound)?;
+        ensure!(proposal.proposer == proposer, Error::<T>::NotYourProposal);
         ensure!(
             proposal.state == ProposalState::Pending,
             Error::<T>::ProposalCannotBeModified
@@ -609,6 +612,8 @@ decl_error! {
         TokenNotFound,
         /// Proposal not found.
         ProposalNotFound,
+        /// Not your proposal, you cannot update or delete it.
+        NotYourProposal,
         /// The proposal now cannot be reviewed.
         ProposalCannotBeReviewed,
         /// The proposal now cannot be voted.
