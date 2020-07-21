@@ -413,8 +413,9 @@ decl_module! {
 impl<T: Trait> Module<T> {
     fn deposit_into_existing(account: &T::AccountId, amount: BalanceOf<T>) -> DispatchResult {
         ensure!(
-           TOTAL_ISSUANCE.saturated_into::<BalanceOf<T>>() - T::Currency::total_issuance() >= amount,
-           Error::<T>::InsufficientIssuance
+            TOTAL_ISSUANCE.saturated_into::<BalanceOf<T>>() - T::Currency::total_issuance()
+                >= amount,
+            Error::<T>::InsufficientIssuance
         );
         T::Currency::deposit_into_existing(account, amount)?;
         T::Currency::issue(amount);
