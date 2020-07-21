@@ -25,6 +25,7 @@ pub type ProposalId = u32;
 
 pub const ZERO_GOALS: (u64, u64) = (0, 0);
 pub const TOTAL_REWARDS: u64 = 100_000;
+pub const TOTAL_ISSUANCE: u64 = 1_000_000_000;
 
 pub trait Trait: system::Trait + timestamp::Trait {
     type Event: From<Event<Self>> + Into<<Self as system::Trait>::Event>;
@@ -144,6 +145,10 @@ decl_module! {
             target_board: BoardType
         ) -> DispatchResult {
             let proposer = ensure_signed(origin)?;
+            ensure!(
+                TOTAL_ISSUANCE - T::Currency::total_issuance().saturated_into::<u64>() >= TOTAL_REWARDS,
+                Error::<T>::InsufficientIssuance
+            );
             ensure!(!Tokens::<T>::contains_key(&token_symbol), Error::<T>::TokenExists);
             let now = Self::get_now_ts();
             let id = Self::generate_id();
@@ -209,10 +214,21 @@ decl_module! {
         #[weight = 200]
         fn create_delist_proposal(origin, token_symbol: Vec<u8>) -> DispatchResult {
             let proposer = ensure_signed(origin)?;
+            ensure!(
+                TOTAL_ISSUANCE - T::Currency::total_issuance().saturated_into::<u64>() >= TOTAL_REWARDS,
+                Error::<T>::InsufficientIssuance
+            );
             let token_info = Self::token(&token_symbol).ok_or(Error::<T>::TokenNotFound)?;
             let now = Self::get_now_ts();
             let id = Self::generate_id();
-            let new_proposal = Self::clone_from_token_info(proposer, ProposalType::Delist, BoardType::Off, now, token_info);
+            let new_proposal = Self::clone_from_token_info(
+                proposer,
+                ProposalType::Delist,
+                BoardType::Off,
+                TOTAL_REWARDS.saturated_into::<BalanceOf<T>>(),
+                now,
+                token_info
+            );
             Proposals::<T>::insert(id, new_proposal);
             Self::deposit_event(RawEvent::CreateProposal(id));
             Ok(())
@@ -229,7 +245,14 @@ decl_module! {
             let proposer = ensure_signed(origin)?;
             let token_info = Self::token(&token_symbol).ok_or(Error::<T>::TokenNotFound)?;
             let now = Self::get_now_ts();
-            let new_proposal = Self::clone_from_token_info(proposer, ProposalType::Rise, BoardType::Main, now, token_info);
+            let new_proposal = Self::clone_from_token_info(
+                proposer,
+                ProposalType::Rise,
+                BoardType::Main,
+                0.saturated_into::<BalanceOf<T>>(),
+                now,
+                token_info
+            );
             let id = Self::generate_id();
             Proposals::<T>::insert(id, new_proposal);
             Self::deposit_event(RawEvent::CreateProposal(id));
@@ -248,7 +271,14 @@ decl_module! {
             let token_info = Self::token(&token_symbol).ok_or(Error::<T>::TokenNotFound)?;
             let now = Self::get_now_ts();
             let id = Self::generate_id();
-            let new_proposal = Self::clone_from_token_info(proposer, ProposalType::Fall, BoardType::Growth, now, token_info);
+            let new_proposal = Self::clone_from_token_info(
+                proposer,
+                ProposalType::Fall,
+                BoardType::Growth,
+                0.saturated_into::<BalanceOf<T>>(),
+                now,
+                token_info
+            );
             Proposals::<T>::insert(id, new_proposal);
             Self::deposit_event(RawEvent::CreateProposal(id));
             Ok(())
@@ -288,6 +318,8 @@ decl_module! {
         fn vote_proposal(origin, id: ProposalId, stand: bool) -> DispatchResult {
             let user = ensure_signed(origin)?;
             let proposal = Self::proposal(id).ok_or(Error::<T>::ProposalNotFound)?;
+            let stake = Self::staking(&user).ok_or(Error::<T>::NoneStaking)?;
+            ensure!(stake.0 == id, Error::<T>::StakeNotMatch);
             ensure!(
                 proposal.state == ProposalState::Voting,
                 Error::<T>::ProposalCannotBeVoted
@@ -297,8 +329,7 @@ decl_module! {
                 voters.push(user.clone());
                 Ok(())
             })?;
-            let stake = Self::staking(&user).ok_or(Error::<T>::NoneStaking)?;
-            ensure!(stake.0 == id, Error::<T>::StakeNotMatch);
+
             let goals = Self::get_goals_from_staking(stake.1, stake.2);
             Proposals::<T>::mutate(id, |p| {
                 if stand {
@@ -335,6 +366,11 @@ decl_module! {
         #[weight = 10]
         fn stake(origin, id: ProposalId, amount: BalanceOf<T>, age_idx: u8) -> DispatchResult {
             let user = ensure_signed(origin)?;
+            let proposal = Self::proposal(id).ok_or(Error::<T>::ProposalNotFound)?;
+            ensure!(
+                proposal.proposal_type == ProposalType::List || proposal.proposal_type == ProposalType::Delist,
+                Error::<T>::ProposalNotForVoting,
+            );
             ensure!(!Staking::<T>::contains_key(&user), Error::<T>::AlreadyStaked);
             T::Currency::reserve(&user, amount)?;
             let now = Self::get_now_ts();
@@ -351,7 +387,7 @@ decl_module! {
             let stake_ts = stake.3;
             let stake_days = AGE_DAY.get(age_idx as usize).unwrap().1;
             let duration = Self::get_now_ts() - stake_ts;
-            ensure!(duration >= stake_days, Error::<T>::InStaking);
+            ensure!(duration >= stake_days, Error::<T>::StillInStaking);
             T::Currency::unreserve(&user, stake_amount);
             Staking::<T>::remove(&user);
             Ok(())
@@ -376,6 +412,10 @@ decl_module! {
 
 impl<T: Trait> Module<T> {
     fn deposit_into_existing(account: &T::AccountId, amount: BalanceOf<T>) -> DispatchResult {
+        ensure!(
+           TOTAL_ISSUANCE.saturated_into::<BalanceOf<T>>() - T::Currency::total_issuance() >= amount,
+           Error::<T>::InsufficientIssuance
+        );
         T::Currency::deposit_into_existing(account, amount)?;
         T::Currency::issue(amount);
         Ok(())
@@ -548,6 +588,7 @@ impl<T: Trait> Module<T> {
         proposer: T::AccountId,
         proposal_type: ProposalType,
         target_board: BoardType,
+        rewards_remainder: BalanceOf<T>,
         timestamp: u64,
         token_info: TokenInfo<BalanceOf<T>>,
     ) -> Proposal<T::AccountId, BalanceOf<T>> {
@@ -564,7 +605,7 @@ impl<T: Trait> Module<T> {
             state: ProposalState::Pending,
             review_goals: ZERO_GOALS,
             vote_goals: ZERO_GOALS,
-            rewards_remainder: TOTAL_REWARDS.saturated_into::<BalanceOf<T>>(),
+            rewards_remainder,
             timestamp,
         }
     }
@@ -614,10 +655,12 @@ decl_error! {
         ProposalNotFound,
         /// Not your proposal, you cannot update or delete it.
         NotYourProposal,
-        /// The proposal now cannot be reviewed.
+        /// The proposal now cannot be reviewed, must in reviewing time can review.
         ProposalCannotBeReviewed,
-        /// The proposal now cannot be voted.
+        /// The proposal now cannot be voted, must in voting time can vote.
         ProposalCannotBeVoted,
+        /// The proposal type is Rise or Fall, not for people to vote.
+        ProposalNotForVoting,
         /// There is no proposal can be modified.
         ProposalCannotBeModified,
         /// You already review and Cannot review again.
@@ -642,6 +685,8 @@ decl_error! {
         /// The stake does not match the proposal.
         StakeNotMatch,
         /// Your balance is still in staking time.
-        InStaking,
+        StillInStaking,
+        /// total issuance insufficient
+        InsufficientIssuance,
     }
 }
