@@ -5,9 +5,9 @@
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh  
 source $HOME/.cargo/env
 
-2. 安装 nightly toolchain 和 其对应版本的wasm 
-rustup toolchain install nightly-2020-06-27
-rustup target add wasm32-unknown-unknown --toolchain nightly-2020-06-27 
+2. 安装 nightly toolchain 和 其对应版本的wasm  
+rustup toolchain install nightly-2020-06-27  
+rustup target add wasm32-unknown-unknown --toolchain nightly-2020-06-27  
 (toolchain版本 写在 ibo-chain/bin/node/cli/rust-toolchain 中)  
 
 3. 下载 ibo-chain  
