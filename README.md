@@ -17,7 +17,7 @@ rustup target add wasm32-unknown-unknown --toolchain nightly-2020-06-27
  cd ibo-chain/bin/node/cli && cargo build --release  （也可直接在根目录下编译，但那样需要编译很多不需要的包） 
  编译完之后的二进制文件: ibo-chain/target/release/ibo-chain
  
-5. 启动 ibo-chain 
+5. 启动 ibo-chain  
 ./target/release/ibo-chain --dev
 
 6. 清空链存储
