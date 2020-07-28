@@ -25,7 +25,7 @@ pub type ProposalId = u32;
 
 pub const ZERO_GOALS: (u64, u64) = (0, 0);
 pub const TOTAL_REWARDS: u64 = 100_000;
-pub const TOTAL_ISSUANCE: u64 = 1_000_000_000;
+pub const MAX_SUPPLY: u64 = 1_000_000_000;
 
 pub trait Trait: system::Trait + timestamp::Trait {
     type Event: From<Event<Self>> + Into<<Self as system::Trait>::Event>;
@@ -38,10 +38,11 @@ pub trait Trait: system::Trait + timestamp::Trait {
 pub struct TokenInfo<Balance> {
     pub official_website_url: Vec<u8>,
     pub token_icon_url: Vec<u8>,
+    token_name: Vec<u8>,
     pub token_symbol: Vec<u8>,
-    pub total_issuance: Balance,
-    pub total_circulation: Balance,
-    pub current_board: BoardType,
+    pub max_supply: Balance,
+    pub circulating_supply: Balance,
+    pub current_market: MarketType,
 }
 
 #[derive(Encode, Decode, Clone, Default, Debug, PartialEq, Eq)]
@@ -50,11 +51,12 @@ pub struct Proposal<AccountId, Balance> {
     pub proposal_type: ProposalType,
     pub official_website_url: Vec<u8>,
     pub token_icon_url: Vec<u8>,
+    pub token_name: Vec<u8>,
     pub token_symbol: Vec<u8>,
-    pub total_issuance: Balance,
-    pub total_circulation: Balance,
-    pub current_board: BoardType,
-    pub target_board: BoardType,
+    pub max_supply: Balance,
+    pub circulating_supply: Balance,
+    pub current_market: MarketType,
+    pub target_market: MarketType,
     /// The state of proposal.
     pub state: ProposalState,
     /// The reviewing number of (supporters, opponents)
@@ -69,15 +71,15 @@ pub struct Proposal<AccountId, Balance> {
 }
 
 #[derive(Encode, Decode, Clone, Debug, PartialEq, Eq)]
-pub enum BoardType {
+pub enum MarketType {
     Main,
     Growth,
     Off,
 }
 
-impl Default for BoardType {
+impl Default for MarketType {
     fn default() -> Self {
-        BoardType::Off
+        MarketType::Off
     }
 }
 
@@ -139,14 +141,15 @@ decl_module! {
             origin,
             official_website_url: Vec<u8>,
             token_icon_url: Vec<u8>,
+            token_name: Vec<u8>,
             token_symbol: Vec<u8>,
-            total_issuance: BalanceOf<T>,
-            total_circulation: BalanceOf<T>,
-            target_board: BoardType
+            max_supply: BalanceOf<T>,
+            circulating_supply: BalanceOf<T>,
+            target_market: MarketType
         ) -> DispatchResult {
             let proposer = ensure_signed(origin)?;
             ensure!(
-                TOTAL_ISSUANCE - T::Currency::total_issuance().saturated_into::<u64>() >= TOTAL_REWARDS,
+                MAX_SUPPLY - T::Currency::total_issuance().saturated_into::<u64>() >= TOTAL_REWARDS,
                 Error::<T>::InsufficientIssuance
             );
             ensure!(!Tokens::<T>::contains_key(&token_symbol), Error::<T>::TokenExists);
@@ -157,11 +160,12 @@ decl_module! {
                 proposal_type: ProposalType::List,
                 official_website_url,
                 token_icon_url,
+                token_name,
                 token_symbol,
-                total_issuance,
-                total_circulation,
-                current_board: BoardType::Off,
-                target_board,
+                max_supply,
+                circulating_supply,
+                current_market: MarketType::Off,
+                target_market,
                 state: ProposalState::Pending,
                 review_goals: ZERO_GOALS,
                 vote_goals: ZERO_GOALS,
@@ -179,10 +183,11 @@ decl_module! {
             id: ProposalId,
             official_website_url: Vec<u8>,
             token_icon_url: Vec<u8>,
+            token_name: Vec<u8>,
             token_symbol: Vec<u8>,
-            total_issuance: BalanceOf<T>,
-            total_circulation: BalanceOf<T>,
-            target_board: BoardType
+            max_supply: BalanceOf<T>,
+            circulating_supply: BalanceOf<T>,
+            target_market: MarketType
         ) -> DispatchResult {
             let proposer = ensure_signed(origin)?;
             let now = Self::get_now_ts();
@@ -191,11 +196,12 @@ decl_module! {
                 proposal_type: ProposalType::List,
                 official_website_url,
                 token_icon_url,
+                token_name,
                 token_symbol,
-                total_issuance,
-                total_circulation,
-                current_board: BoardType::Off,
-                target_board,
+                max_supply,
+                circulating_supply,
+                current_market: MarketType::Off,
+                target_market,
                 state: ProposalState::Pending,
                 review_goals: ZERO_GOALS,
                 vote_goals: ZERO_GOALS,
@@ -215,7 +221,7 @@ decl_module! {
         fn create_delist_proposal(origin, token_symbol: Vec<u8>) -> DispatchResult {
             let proposer = ensure_signed(origin)?;
             ensure!(
-                TOTAL_ISSUANCE - T::Currency::total_issuance().saturated_into::<u64>() >= TOTAL_REWARDS,
+                MAX_SUPPLY - T::Currency::total_issuance().saturated_into::<u64>() >= TOTAL_REWARDS,
                 Error::<T>::InsufficientIssuance
             );
             let token_info = Self::token(&token_symbol).ok_or(Error::<T>::TokenNotFound)?;
@@ -224,7 +230,7 @@ decl_module! {
             let new_proposal = Self::clone_from_token_info(
                 proposer,
                 ProposalType::Delist,
-                BoardType::Off,
+                MarketType::Off,
                 TOTAL_REWARDS.saturated_into::<BalanceOf<T>>(),
                 now,
                 token_info
@@ -248,7 +254,7 @@ decl_module! {
             let new_proposal = Self::clone_from_token_info(
                 proposer,
                 ProposalType::Rise,
-                BoardType::Main,
+                MarketType::Main,
                 0.saturated_into::<BalanceOf<T>>(),
                 now,
                 token_info
@@ -274,7 +280,7 @@ decl_module! {
             let new_proposal = Self::clone_from_token_info(
                 proposer,
                 ProposalType::Fall,
-                BoardType::Growth,
+                MarketType::Growth,
                 0.saturated_into::<BalanceOf<T>>(),
                 now,
                 token_info
@@ -413,7 +419,7 @@ decl_module! {
 impl<T: Trait> Module<T> {
     fn deposit_into_existing(account: &T::AccountId, amount: BalanceOf<T>) -> DispatchResult {
         ensure!(
-            TOTAL_ISSUANCE.saturated_into::<BalanceOf<T>>() - T::Currency::total_issuance()
+            MAX_SUPPLY.saturated_into::<BalanceOf<T>>() - T::Currency::total_issuance()
                 >= amount,
             Error::<T>::InsufficientIssuance
         );
@@ -588,7 +594,7 @@ impl<T: Trait> Module<T> {
     fn clone_from_token_info(
         proposer: T::AccountId,
         proposal_type: ProposalType,
-        target_board: BoardType,
+        target_market: MarketType,
         rewards_remainder: BalanceOf<T>,
         timestamp: u64,
         token_info: TokenInfo<BalanceOf<T>>,
@@ -598,11 +604,12 @@ impl<T: Trait> Module<T> {
             proposal_type,
             official_website_url: token_info.official_website_url,
             token_icon_url: token_info.token_icon_url,
+            token_name: token_info.token_name,
             token_symbol: token_info.token_symbol,
-            total_issuance: token_info.total_issuance,
-            total_circulation: token_info.total_circulation,
-            current_board: token_info.current_board,
-            target_board,
+            max_supply: token_info.max_supply,
+            circulating_supply: token_info.circulating_supply,
+            current_market: token_info.current_market,
+            target_market,
             state: ProposalState::Pending,
             review_goals: ZERO_GOALS,
             vote_goals: ZERO_GOALS,
@@ -617,10 +624,11 @@ impl<T: Trait> Module<T> {
         TokenInfo {
             official_website_url: proposal.official_website_url,
             token_icon_url: proposal.token_icon_url,
+            token_name: proposal.token_name,
             token_symbol: proposal.token_symbol,
-            total_issuance: proposal.total_issuance,
-            total_circulation: proposal.total_circulation,
-            current_board: proposal.target_board,
+            max_supply: proposal.max_supply,
+            circulating_supply: proposal.circulating_supply,
+            current_market: proposal.target_market,
         }
     }
 
