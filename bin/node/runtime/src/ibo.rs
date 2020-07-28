@@ -38,7 +38,7 @@ pub trait Trait: system::Trait + timestamp::Trait {
 pub struct TokenInfo<Balance> {
     pub official_website_url: Vec<u8>,
     pub token_icon_url: Vec<u8>,
-    token_name: Vec<u8>,
+    pub token_name: Vec<u8>,
     pub token_symbol: Vec<u8>,
     pub max_supply: Balance,
     pub circulating_supply: Balance,
@@ -47,6 +47,7 @@ pub struct TokenInfo<Balance> {
 
 #[derive(Encode, Decode, Clone, Default, Debug, PartialEq, Eq)]
 pub struct Proposal<AccountId, Balance> {
+    pub id: ProposalId,
     pub proposer: AccountId,
     pub proposal_type: ProposalType,
     pub official_website_url: Vec<u8>,
@@ -136,6 +137,19 @@ decl_module! {
 
         fn deposit_event() = default;
 
+        #[weight = 0]
+        fn get_proposals_by_state(origin, state: ProposalState) {
+            let _ = ensure_signed(origin)?;
+            let mut proposals = Vec::new();
+            let mut iter = Proposals::<T>::iter();
+            while let Some((_, p)) = iter.next() {
+                if p.state == state {
+                    proposals.push(p);
+                }
+            }
+            Self::deposit_event(RawEvent::GetProposalsByState(proposals));
+        }
+
         #[weight = 200]
         fn create_list_proposal(
             origin,
@@ -156,6 +170,7 @@ decl_module! {
             let now = Self::get_now_ts();
             let id = Self::generate_id();
             let new_proposal = Proposal {
+                id,
                 proposer,
                 proposal_type: ProposalType::List,
                 official_website_url,
@@ -192,6 +207,7 @@ decl_module! {
             let proposer = ensure_signed(origin)?;
             let now = Self::get_now_ts();
             let new_proposal = Proposal {
+                id,
                 proposer: proposer.clone(),
                 proposal_type: ProposalType::List,
                 official_website_url,
@@ -228,6 +244,7 @@ decl_module! {
             let now = Self::get_now_ts();
             let id = Self::generate_id();
             let new_proposal = Self::clone_from_token_info(
+                id,
                 proposer,
                 ProposalType::Delist,
                 MarketType::Off,
@@ -251,7 +268,9 @@ decl_module! {
             let proposer = ensure_signed(origin)?;
             let token_info = Self::token(&token_symbol).ok_or(Error::<T>::TokenNotFound)?;
             let now = Self::get_now_ts();
+            let id = Self::generate_id();
             let new_proposal = Self::clone_from_token_info(
+                id,
                 proposer,
                 ProposalType::Rise,
                 MarketType::Main,
@@ -259,7 +278,6 @@ decl_module! {
                 now,
                 token_info
             );
-            let id = Self::generate_id();
             Proposals::<T>::insert(id, new_proposal);
             Self::deposit_event(RawEvent::CreateProposal(id));
             Ok(())
@@ -278,6 +296,7 @@ decl_module! {
             let now = Self::get_now_ts();
             let id = Self::generate_id();
             let new_proposal = Self::clone_from_token_info(
+                id,
                 proposer,
                 ProposalType::Fall,
                 MarketType::Growth,
@@ -592,6 +611,7 @@ impl<T: Trait> Module<T> {
     }
 
     fn clone_from_token_info(
+        id: ProposalId,
         proposer: T::AccountId,
         proposal_type: ProposalType,
         target_market: MarketType,
@@ -600,6 +620,7 @@ impl<T: Trait> Module<T> {
         token_info: TokenInfo<BalanceOf<T>>,
     ) -> Proposal<T::AccountId, BalanceOf<T>> {
         Proposal {
+            id,
             proposer,
             proposal_type,
             official_website_url: token_info.official_website_url,
@@ -645,9 +666,10 @@ impl<T: Trait> Module<T> {
 decl_event! {
     pub enum Event<T>
         where
-        AccountId = <T as system::Trait>::AccountId
+        AccountId = <T as system::Trait>::AccountId,
+        Balance = BalanceOf<T>
         {
-            Vote(AccountId),
+            GetProposalsByState(Vec<Proposal<AccountId, Balance>>),
 
             CreateProposal(ProposalId),
         }
