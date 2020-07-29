@@ -137,19 +137,6 @@ decl_module! {
 
         fn deposit_event() = default;
 
-        #[weight = 0]
-        fn get_proposals_by_state(origin, state: ProposalState) {
-            let _ = ensure_signed(origin)?;
-            let mut proposals = Vec::new();
-            let mut iter = Proposals::<T>::iter();
-            while let Some((_, p)) = iter.next() {
-                if p.state == state {
-                    proposals.push(p);
-                }
-            }
-            Self::deposit_event(RawEvent::GetProposalsByState(proposals));
-        }
-
         #[weight = 200]
         fn create_list_proposal(
             origin,
@@ -187,8 +174,8 @@ decl_module! {
                 rewards_remainder: TOTAL_REWARDS.saturated_into::<BalanceOf<T>>(),
                 timestamp: now,
             };
-            Proposals::<T>::insert(id, new_proposal);
-            Self::deposit_event(RawEvent::CreateProposal(id));
+            Proposals::<T>::insert(id, new_proposal.clone());
+            Self::deposit_event(RawEvent::CreateProposal(new_proposal));
             Ok(())
         }
 
@@ -252,8 +239,8 @@ decl_module! {
                 now,
                 token_info
             );
-            Proposals::<T>::insert(id, new_proposal);
-            Self::deposit_event(RawEvent::CreateProposal(id));
+            Proposals::<T>::insert(id, new_proposal.clone());
+            Self::deposit_event(RawEvent::CreateProposal(new_proposal));
             Ok(())
         }
 
@@ -278,8 +265,8 @@ decl_module! {
                 now,
                 token_info
             );
-            Proposals::<T>::insert(id, new_proposal);
-            Self::deposit_event(RawEvent::CreateProposal(id));
+            Proposals::<T>::insert(id, new_proposal.clone());
+            Self::deposit_event(RawEvent::CreateProposal(new_proposal));
             Ok(())
         }
 
@@ -304,8 +291,8 @@ decl_module! {
                 now,
                 token_info
             );
-            Proposals::<T>::insert(id, new_proposal);
-            Self::deposit_event(RawEvent::CreateProposal(id));
+            Proposals::<T>::insert(id, new_proposal.clone());
+            Self::deposit_event(RawEvent::CreateProposal(new_proposal));
             Ok(())
         }
 
@@ -594,7 +581,8 @@ impl<T: Trait> Module<T> {
             proposal.state == ProposalState::Pending,
             Error::<T>::ProposalCannotBeModified
         );
-        Proposals::<T>::insert(id, new_proposal);
+        Proposals::<T>::insert(id, new_proposal.clone());
+        Self::deposit_event(RawEvent::UpdateProposal(new_proposal));
         Ok(())
     }
 
@@ -607,6 +595,7 @@ impl<T: Trait> Module<T> {
             Error::<T>::ProposalCannotBeModified
         );
         Proposals::<T>::remove(id);
+        Self::deposit_event(RawEvent::DeleteProposal(id));
         Ok(())
     }
 
@@ -669,9 +658,12 @@ decl_event! {
         AccountId = <T as system::Trait>::AccountId,
         Balance = BalanceOf<T>
         {
-            GetProposalsByState(Vec<Proposal<AccountId, Balance>>),
+            CreateProposal(Proposal<AccountId, Balance>),
 
-            CreateProposal(ProposalId),
+            UpdateProposal(Proposal<AccountId, Balance>),
+
+            DeleteProposal(ProposalId),
+
         }
 }
 
