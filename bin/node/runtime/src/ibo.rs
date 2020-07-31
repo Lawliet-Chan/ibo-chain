@@ -119,11 +119,15 @@ decl_storage! {
     trait Store for Module<T: Trait> as Ibo {
         pub Proposals get(fn proposal): map hasher(twox_64_concat) ProposalId => Option<Proposal<T::AccountId, BalanceOf<T>>>;
 
+        pub ReviewingProposals get(fn reviewing_proposals): Vec<ProposalId>;
+
+        pub VotingProposal get(fn voting_proposals): ProposalId;
+
         pub Tokens get(fn token): map hasher(twox_64_concat) Vec<u8> => Option<TokenInfo<BalanceOf<T>>>;
 
-        pub Reviewing get(fn reviewing): map hasher(twox_64_concat) ProposalId => Vec<T::AccountId>;
+        pub Reviewers get(fn reviewers): map hasher(twox_64_concat) ProposalId => Vec<T::AccountId>;
 
-        pub Voting get(fn voting): map hasher(twox_64_concat) ProposalId => Vec<T::AccountId>;
+        pub Voters get(fn voters): map hasher(twox_64_concat) ProposalId => Vec<T::AccountId>;
         // (BalanceOf<T>, usize) = (staking, AGE_DAY index)
         pub Staking get(fn staking): map hasher(twox_64_concat) T::AccountId => Option<(ProposalId, BalanceOf<T>, u8, u64)>;
 
@@ -311,7 +315,7 @@ decl_module! {
                 proposal.state == ProposalState::Reviewing,
                 Error::<T>::ProposalCannotBeReviewed
             );
-            Reviewing::<T>::try_mutate(id, |reviewers| -> DispatchResult {
+            Reviewers::<T>::try_mutate(id, |reviewers| -> DispatchResult {
                 ensure!(!(&*reviewers).contains(&member), Error::<T>::AlreadyReview);
                 reviewers.push(member);
                 Ok(())
@@ -336,7 +340,7 @@ decl_module! {
                 proposal.state == ProposalState::Voting,
                 Error::<T>::ProposalCannotBeVoted
             );
-            Voting::<T>::try_mutate(id, |voters| -> DispatchResult {
+            Voters::<T>::try_mutate(id, |voters| -> DispatchResult {
                 ensure!(!(&*voters).contains(&user), Error::<T>::AlreadyVote);
                 voters.push(user.clone());
                 Ok(())
@@ -356,7 +360,7 @@ decl_module! {
         #[weight = 10]
         fn receive_rewards(origin, id: ProposalId) -> DispatchResult {
             let user = ensure_signed(origin)?;
-            ensure!(Self::voting(id).contains(&user), Error::<T>::NoVote);
+            ensure!(Self::voters(id).contains(&user), Error::<T>::NoVote);
             let proposal = Self::proposal(id).ok_or(Error::<T>::ProposalNotFound)?;
             let is_state_for_rewards =
                 proposal.state == ProposalState::Approved || proposal.state == ProposalState::Rejected;
@@ -456,6 +460,7 @@ impl<T: Trait> Module<T> {
             proposal.state = ProposalState::Reviewing;
             proposal.timestamp = now;
             Proposals::<T>::insert(id, proposal);
+            ReviewingProposals::mutate(|p| p.push(id));
         }
     }
 
@@ -482,8 +487,16 @@ impl<T: Trait> Module<T> {
                 };
             }
 
+            if VotingProposal::exists() {
+                proposal.timestamp = now;
+                ReviewingProposals::mutate(|p| p.remove_item(&id));
+                Proposals::<T>::insert(id, proposal);
+                return
+            }
+
             if proposal.proposal_type == ProposalType::Delist {
                 proposal.state = if supporters_goals >= opponents_goals {
+                    VotingProposal::put(id);
                     ProposalState::Voting
                 } else {
                     ProposalState::Rejected
@@ -492,13 +505,14 @@ impl<T: Trait> Module<T> {
 
             if proposal.proposal_type == ProposalType::List {
                 proposal.state = if supporters_goals >= 2 * opponents_goals {
+                    VotingProposal::put(id);
                     ProposalState::Voting
                 } else {
                     ProposalState::Rejected
                 };
             }
             proposal.timestamp = now;
-
+            ReviewingProposals::mutate(|p| p.remove_item(&id));
             Proposals::<T>::insert(id, proposal);
         }
     }
@@ -534,6 +548,8 @@ impl<T: Trait> Module<T> {
             }
 
             proposal.timestamp = now;
+
+            VotingProposal::kill();
             Proposals::<T>::insert(id, proposal);
         }
     }
