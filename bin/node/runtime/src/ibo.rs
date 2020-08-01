@@ -119,8 +119,6 @@ decl_storage! {
     trait Store for Module<T: Trait> as Ibo {
         pub Proposals get(fn proposal): map hasher(twox_64_concat) ProposalId => Option<Proposal<T::AccountId, BalanceOf<T>>>;
 
-        pub ReviewingProposals get(fn reviewing_proposals): Vec<ProposalId>;
-
         pub VotingProposal get(fn voting_proposals): ProposalId;
 
         pub Tokens get(fn token): map hasher(twox_64_concat) Vec<u8> => Option<TokenInfo<BalanceOf<T>>>;
@@ -179,7 +177,7 @@ decl_module! {
                 timestamp: now,
             };
             Proposals::<T>::insert(id, new_proposal.clone());
-            Self::deposit_event(RawEvent::CreateProposal(new_proposal));
+            Self::deposit_event(RawEvent::ProposalChanged(CREATE, new_proposal));
             Ok(())
         }
 
@@ -244,7 +242,7 @@ decl_module! {
                 token_info
             );
             Proposals::<T>::insert(id, new_proposal.clone());
-            Self::deposit_event(RawEvent::CreateProposal(new_proposal));
+            Self::deposit_event(RawEvent::ProposalChanged(CREATE, new_proposal));
             Ok(())
         }
 
@@ -270,7 +268,7 @@ decl_module! {
                 token_info
             );
             Proposals::<T>::insert(id, new_proposal.clone());
-            Self::deposit_event(RawEvent::CreateProposal(new_proposal));
+            Self::deposit_event(RawEvent::ProposalChanged(CREATE, new_proposal));
             Ok(())
         }
 
@@ -296,7 +294,7 @@ decl_module! {
                 token_info
             );
             Proposals::<T>::insert(id, new_proposal.clone());
-            Self::deposit_event(RawEvent::CreateProposal(new_proposal));
+            Self::deposit_event(RawEvent::ProposalChanged(CREATE, new_proposal));
             Ok(())
         }
 
@@ -459,8 +457,8 @@ impl<T: Trait> Module<T> {
         if duration > ALLOW_MODIFY_DURATION {
             proposal.state = ProposalState::Reviewing;
             proposal.timestamp = now;
-            Proposals::<T>::insert(id, proposal);
-            ReviewingProposals::mutate(|p| p.push(id));
+            Proposals::<T>::insert(id, proposal.clone());
+            Self::deposit_event(RawEvent::ProposalChanged(UPDATE, proposal));
         }
     }
 
@@ -485,35 +483,33 @@ impl<T: Trait> Module<T> {
                 } else {
                     ProposalState::Rejected
                 };
+            } else {
+                if VotingProposal::exists() {
+                    return
+                }
+
+                if proposal.proposal_type == ProposalType::Delist {
+                    proposal.state = if supporters_goals >= opponents_goals {
+                        VotingProposal::put(id);
+                        ProposalState::Voting
+                    } else {
+                        ProposalState::Rejected
+                    };
+                }
+
+                if proposal.proposal_type == ProposalType::List {
+                    proposal.state = if supporters_goals >= 2 * opponents_goals {
+                        VotingProposal::put(id);
+                        ProposalState::Voting
+                    } else {
+                        ProposalState::Rejected
+                    };
+                }
             }
 
-            if VotingProposal::exists() {
-                proposal.timestamp = now;
-                ReviewingProposals::mutate(|p| p.remove_item(&id));
-                Proposals::<T>::insert(id, proposal);
-                return
-            }
-
-            if proposal.proposal_type == ProposalType::Delist {
-                proposal.state = if supporters_goals >= opponents_goals {
-                    VotingProposal::put(id);
-                    ProposalState::Voting
-                } else {
-                    ProposalState::Rejected
-                };
-            }
-
-            if proposal.proposal_type == ProposalType::List {
-                proposal.state = if supporters_goals >= 2 * opponents_goals {
-                    VotingProposal::put(id);
-                    ProposalState::Voting
-                } else {
-                    ProposalState::Rejected
-                };
-            }
             proposal.timestamp = now;
-            ReviewingProposals::mutate(|p| p.remove_item(&id));
-            Proposals::<T>::insert(id, proposal);
+            Proposals::<T>::insert(id, proposal.clone());
+            Self::deposit_event(RawEvent::ProposalChanged(UPDATE, proposal));
         }
     }
 
@@ -550,7 +546,8 @@ impl<T: Trait> Module<T> {
             proposal.timestamp = now;
 
             VotingProposal::kill();
-            Proposals::<T>::insert(id, proposal);
+            Proposals::<T>::insert(id, proposal.clone());
+            Self::deposit_event(RawEvent::ProposalChanged(UPDATE, proposal));
         }
     }
 
@@ -570,7 +567,8 @@ impl<T: Trait> Module<T> {
             proposal.timestamp = now;
             let treasury_account = T::Treasury::get_account_id();
             Self::deposit_into_existing(&treasury_account, proposal.rewards_remainder);
-            Proposals::<T>::insert(id, proposal);
+            Proposals::<T>::insert(id, proposal.clone());
+            Self::deposit_event(RawEvent::ProposalChanged(UPDATE, proposal));
         }
     }
 
@@ -598,7 +596,7 @@ impl<T: Trait> Module<T> {
             Error::<T>::ProposalCannotBeModified
         );
         Proposals::<T>::insert(id, new_proposal.clone());
-        Self::deposit_event(RawEvent::UpdateProposal(new_proposal));
+        Self::deposit_event(RawEvent::ProposalChanged(UPDATE, new_proposal));
         Ok(())
     }
 
@@ -611,7 +609,7 @@ impl<T: Trait> Module<T> {
             Error::<T>::ProposalCannotBeModified
         );
         Proposals::<T>::remove(id);
-        Self::deposit_event(RawEvent::DeleteProposal(id));
+        Self::deposit_event(RawEvent::ProposalChanged(DELETE, proposal));
         Ok(())
     }
 
@@ -668,18 +666,18 @@ impl<T: Trait> Module<T> {
     }
 }
 
+pub type ProposalChangedType = u8;
+pub const CREATE: ProposalChangedType = 1;
+pub const UPDATE: ProposalChangedType = 2;
+pub const DELETE: ProposalChangedType = 3;
+
 decl_event! {
     pub enum Event<T>
         where
         AccountId = <T as system::Trait>::AccountId,
         Balance = BalanceOf<T>
         {
-            CreateProposal(Proposal<AccountId, Balance>),
-
-            UpdateProposal(Proposal<AccountId, Balance>),
-
-            DeleteProposal(ProposalId),
-
+            ProposalChanged(ProposalChangedType, Proposal<AccountId, Balance>),
         }
 }
 
