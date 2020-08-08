@@ -71,31 +71,32 @@ pub mod time {
     pub const HOURS: BlockNumber = MINUTES * 60;
     pub const DAYS: BlockNumber = HOURS * 24;
 
+    pub const MINUTE: u64 = 1000 * 60;
     pub const DAY: u64 = 1000 * 60 * 60 * 24;
 }
 
 pub mod congress {
     use crate::constants::time::DAY;
+    use crate::constants::time::MINUTE;
 
     pub const MAX_MEMBERS: u8 = 23;
 
     pub const PASS_RATE: f32 = 0.66;
 
-    pub const ALLOW_MODIFY_DURATION: u64 = 1 * DAY;
+    pub const ALLOW_MODIFY_DURATION: u64 = MINUTE; // 1 * DAY;
 
-    pub const REVIEW_DURATION: u64 = 7 * DAY;
+    pub const REVIEW_DURATION: u64 = MINUTE; // 7 * DAY;
 }
 
 pub mod referendum {
     use crate::constants::time::DAY;
-    // use sp_std::vec;
-    // use sp_std::vec::Vec;
+    use crate::constants::time::MINUTE;
 
     pub type VoteAge = u64;
 
-    pub const VOTE_DURATION: u64 = 7 * DAY;
+    pub const VOTE_DURATION: u64 = MINUTE; // 7 * DAY;
 
-    pub const RECEIVE_REWARDS_DURATION: u64 = 30 * DAY;
+    pub const RECEIVE_REWARDS_DURATION: u64 = MINUTE; // 30 * DAY;
 
     pub const AGE_DAY: [(VoteAge, LockPeriod); 6] = [
         (A_AGE, A_DAY),
@@ -121,12 +122,12 @@ pub mod referendum {
 
     pub type LockPeriod = u64;
 
-    pub const A_DAY: LockPeriod = 8 * DAY;
-    pub const B_DAY: LockPeriod = 16 * DAY;
-    pub const C_DAY: LockPeriod = 32 * DAY;
-    pub const D_DAY: LockPeriod = 64 * DAY;
-    pub const E_DAY: LockPeriod = 128 * DAY;
-    pub const F_DAY: LockPeriod = 256 * DAY;
+    pub const A_DAY: LockPeriod = MINUTE; // 8 * DAY;
+    pub const B_DAY: LockPeriod = 2 * MINUTE; // 16 * DAY;
+    pub const C_DAY: LockPeriod = 3 * MINUTE; // 32 * DAY;
+    pub const D_DAY: LockPeriod = 4 * MINUTE; // 64 * DAY;
+    pub const E_DAY: LockPeriod = 5 * MINUTE; // 128 * DAY;
+    pub const F_DAY: LockPeriod = 6 * MINUTE; // 256 * DAY;
 
     /// If total (LockPeriod * VoteAge) >= LIST_PASS_RATE,
     /// it will list the token.
