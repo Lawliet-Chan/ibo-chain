@@ -411,6 +411,7 @@ decl_module! {
         fn burn(origin, burn_amount: BalanceOf<T>) {
             let user = ensure_signed(origin)?;
             T::Currency::slash(&user, burn_amount);
+            T::Currency::burn(burn_amount);
         }
 
         fn on_finalize() {
