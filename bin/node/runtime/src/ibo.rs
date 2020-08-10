@@ -156,6 +156,7 @@ decl_module! {
                 Error::<T>::InsufficientIssuance
             );
             ensure!(!Tokens::<T>::contains_key(&token_symbol), Error::<T>::TokenExists);
+            ensure!(!Tokens::<T>::contains_key(&token_name), Error::<T>::TokenExists);
             let now = Self::get_now_ts();
             let id = Self::generate_id();
             let new_proposal = Proposal {
@@ -194,6 +195,8 @@ decl_module! {
             target_market: MarketType
         ) -> DispatchResult {
             let proposer = ensure_signed(origin)?;
+            ensure!(!Tokens::<T>::contains_key(&token_symbol), Error::<T>::TokenExists);
+            ensure!(!Tokens::<T>::contains_key(&token_name), Error::<T>::TokenExists);
             let now = Self::get_now_ts();
             let new_proposal = Proposal {
                 id,
