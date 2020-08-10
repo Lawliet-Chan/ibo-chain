@@ -388,6 +388,7 @@ decl_module! {
                 proposal.proposal_type == ProposalType::List || proposal.proposal_type == ProposalType::Delist,
                 Error::<T>::ProposalNotForVoting,
             );
+            ensure!(proposal.state == ProposalState::Voting, Error::<T>::IllegalStakeTime);
             ensure!(!Staking::<T>::contains_key(&user), Error::<T>::AlreadyStaked);
             T::Currency::reserve(&user, amount)?;
             let now = Self::get_now_ts();
@@ -718,6 +719,8 @@ decl_error! {
         InvalidVoteAge,
         /// You have already staked.
         AlreadyStaked,
+        /// Only can stake in voting-state.
+        IllegalStakeTime,
         /// You have not voted.
         NoVote,
         /// You cannot receive rewards now
