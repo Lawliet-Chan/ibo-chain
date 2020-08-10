@@ -21,7 +21,6 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 // `construct_runtime!` does a lot of recursion and requires us to increase the limit to 256.
 #![recursion_limit = "256"]
-
 #![feature(vec_remove_item)]
 
 use sp_std::prelude::*;
@@ -519,7 +518,7 @@ impl pallet_collective::Trait<CouncilCollective> for Runtime {
 parameter_types! {
     pub const CandidacyBond: Balance = 10 * DOLLARS;
     pub const VotingBond: Balance = 1 * DOLLARS;
-    pub const TermDuration: BlockNumber = 7 * DAYS;
+    pub const TermDuration: BlockNumber = 5 * MINUTES;// 7 * DAYS;
     pub const DesiredMembers: u32 = 23;
     pub const DesiredRunnersUp: u32 = 7;
     pub const ElectionsPhragmenModuleId: LockIdentifier = *b"phrelect";

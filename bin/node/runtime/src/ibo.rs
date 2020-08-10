@@ -432,8 +432,7 @@ decl_module! {
 impl<T: Trait> Module<T> {
     fn deposit_into_existing(account: &T::AccountId, amount: BalanceOf<T>) -> DispatchResult {
         ensure!(
-            MAX_SUPPLY.saturated_into::<BalanceOf<T>>() - T::Currency::total_issuance()
-                >= amount,
+            MAX_SUPPLY.saturated_into::<BalanceOf<T>>() - T::Currency::total_issuance() >= amount,
             Error::<T>::InsufficientIssuance
         );
         T::Currency::deposit_into_existing(account, amount)?;
@@ -479,7 +478,9 @@ impl<T: Trait> Module<T> {
             if proposal.proposal_type == ProposalType::Rise
                 || proposal.proposal_type == ProposalType::Fall
             {
-                proposal.state = if supporters_goals >= 2 * opponents_goals {
+                proposal.state = if supporters_goals >= 2 * opponents_goals
+                    && supporters_goals + opponents_goals > 0
+                {
                     Tokens::<T>::insert(
                         &proposal.token_symbol,
                         Self::clone_from_proposal(proposal.clone()),
@@ -490,11 +491,11 @@ impl<T: Trait> Module<T> {
                 };
             } else {
                 if VotingProposal::exists() {
-                    return
+                    return;
                 }
 
                 if proposal.proposal_type == ProposalType::Delist {
-                    proposal.state = if supporters_goals >= opponents_goals {
+                    proposal.state = if supporters_goals > opponents_goals {
                         VotingProposal::put(id);
                         ProposalState::Voting
                     } else {
@@ -503,7 +504,9 @@ impl<T: Trait> Module<T> {
                 }
 
                 if proposal.proposal_type == ProposalType::List {
-                    proposal.state = if supporters_goals >= 2 * opponents_goals {
+                    proposal.state = if supporters_goals >= 2 * opponents_goals
+                        && supporters_goals + opponents_goals > 0
+                    {
                         VotingProposal::put(id);
                         ProposalState::Voting
                     } else {
@@ -528,7 +531,9 @@ impl<T: Trait> Module<T> {
             let supporters_goals = proposal.vote_goals.0;
             let opponents_goals = proposal.vote_goals.1;
             if proposal.proposal_type == ProposalType::List {
-                proposal.state = if supporters_goals >= 2 * opponents_goals {
+                proposal.state = if supporters_goals >= 2 * opponents_goals
+                    && supporters_goals + opponents_goals > 0
+                {
                     Tokens::<T>::insert(
                         &proposal.token_symbol,
                         Self::clone_from_proposal(proposal.clone()),
@@ -540,7 +545,7 @@ impl<T: Trait> Module<T> {
             };
 
             if proposal.proposal_type == ProposalType::Delist {
-                proposal.state = if supporters_goals >= opponents_goals {
+                proposal.state = if supporters_goals > opponents_goals {
                     Tokens::<T>::remove(&proposal.token_symbol);
                     ProposalState::Approved
                 } else {
