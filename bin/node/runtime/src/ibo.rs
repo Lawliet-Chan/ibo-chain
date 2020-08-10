@@ -328,6 +328,7 @@ decl_module! {
                     p.as_mut().unwrap().review_goals.1 += 1;
                 }
             });
+            Self::deposit_event(RawEvent::ProposalChanged(UPDATE, Self::proposal(id).unwrap()));
             Ok(())
         }
 
@@ -355,6 +356,7 @@ decl_module! {
                     p.as_mut().unwrap().vote_goals.1 += goals;
                 }
             });
+            Self::deposit_event(RawEvent::ProposalChanged(UPDATE, Self::proposal(id).unwrap()));
             Ok(())
         }
 
@@ -377,6 +379,7 @@ decl_module! {
             let reward = TOTAL_REWARDS.saturated_into::<BalanceOf<T>>() * goals / total_goals;
             Self::deposit_into_existing(&user, reward)?;
             Proposals::<T>::mutate(id, |p| p.as_mut().unwrap().rewards_remainder -= reward);
+            Self::deposit_event(RawEvent::ProposalChanged(UPDATE, Self::proposal(id).unwrap()));
             Ok(())
         }
 
@@ -388,7 +391,10 @@ decl_module! {
                 proposal.proposal_type == ProposalType::List || proposal.proposal_type == ProposalType::Delist,
                 Error::<T>::ProposalNotForVoting,
             );
-            ensure!(proposal.state == ProposalState::Voting, Error::<T>::IllegalStakeTime);
+            ensure!(
+                proposal.state == ProposalState::Voting || proposal.state == ProposalState::Reviewing,
+                Error::<T>::IllegalStakeTime
+            );
             ensure!(!Staking::<T>::contains_key(&user), Error::<T>::AlreadyStaked);
             T::Currency::reserve(&user, amount)?;
             let now = Self::get_now_ts();
