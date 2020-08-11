@@ -333,22 +333,22 @@ decl_module! {
         }
 
         #[weight = 10]
-        fn vote_proposal(origin, id: ProposalId, stand: bool) -> DispatchResult {
+        fn vote_proposal(origin, id: ProposalId, amount: BalanceOf<T>, age_idx: u8, stand: bool) -> DispatchResult {
             let user = ensure_signed(origin)?;
             let proposal = Self::proposal(id).ok_or(Error::<T>::ProposalNotFound)?;
-            let stake = Self::staking(&user).ok_or(Error::<T>::NoneStaking)?;
-            ensure!(stake.0 == id, Error::<T>::StakeNotMatch);
             ensure!(
                 proposal.state == ProposalState::Voting,
                 Error::<T>::ProposalCannotBeVoted
             );
+
             Voters::<T>::try_mutate(id, |voters| -> DispatchResult {
                 ensure!(!(&*voters).contains(&user), Error::<T>::AlreadyVote);
+                T::Currency::reserve(&user, amount)?;
                 voters.push(user.clone());
                 Ok(())
             })?;
 
-            let goals = Self::get_goals_from_staking(stake.1, stake.2);
+            let goals = Self::get_goals_from_staking(amount, age_idx);
             Proposals::<T>::mutate(id, |p| {
                 if stand {
                     p.as_mut().unwrap().vote_goals.0 += goals;
@@ -383,24 +383,24 @@ decl_module! {
             Ok(())
         }
 
-        #[weight = 10]
-        fn stake(origin, id: ProposalId, amount: BalanceOf<T>, age_idx: u8) -> DispatchResult {
-            let user = ensure_signed(origin)?;
-            let proposal = Self::proposal(id).ok_or(Error::<T>::ProposalNotFound)?;
-            ensure!(
-                proposal.proposal_type == ProposalType::List || proposal.proposal_type == ProposalType::Delist,
-                Error::<T>::ProposalNotForVoting,
-            );
-            ensure!(
-                proposal.state == ProposalState::Voting || proposal.state == ProposalState::Reviewing,
-                Error::<T>::IllegalStakeTime
-            );
-            ensure!(!Staking::<T>::contains_key(&user), Error::<T>::AlreadyStaked);
-            T::Currency::reserve(&user, amount)?;
-            let now = Self::get_now_ts();
-            Staking::<T>::insert(user, (id, amount, age_idx, now));
-            Ok(())
-        }
+        // #[weight = 10]
+        // fn stake(origin, id: ProposalId, amount: BalanceOf<T>, age_idx: u8) -> DispatchResult {
+        //     let user = ensure_signed(origin)?;
+        //     let proposal = Self::proposal(id).ok_or(Error::<T>::ProposalNotFound)?;
+        //     ensure!(
+        //         proposal.proposal_type == ProposalType::List || proposal.proposal_type == ProposalType::Delist,
+        //         Error::<T>::ProposalNotForVoting,
+        //     );
+        //     ensure!(
+        //         proposal.state == ProposalState::Voting || proposal.state == ProposalState::Reviewing,
+        //         Error::<T>::IllegalStakeTime
+        //     );
+        //     ensure!(!Staking::<T>::contains_key(&user), Error::<T>::AlreadyStaked);
+        //     T::Currency::reserve(&user, amount)?;
+        //     let now = Self::get_now_ts();
+        //     Staking::<T>::insert(user, (id, amount, age_idx, now));
+        //     Ok(())
+        // }
 
         #[weight = 100]
         fn unstake(origin) -> DispatchResult {
