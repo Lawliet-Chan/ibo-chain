@@ -155,7 +155,6 @@ decl_module! {
                 MAX_SUPPLY - T::Currency::total_issuance().saturated_into::<u64>() >= TOTAL_REWARDS,
                 Error::<T>::InsufficientIssuance
             );
-            ensure!(!Tokens::<T>::contains_key(&token_symbol), Error::<T>::TokenExists);
             ensure!(!Tokens::<T>::contains_key(&token_name), Error::<T>::TokenExists);
             let now = Self::get_now_ts();
             let id = Self::generate_id();
@@ -195,7 +194,6 @@ decl_module! {
             target_market: MarketType
         ) -> DispatchResult {
             let proposer = ensure_signed(origin)?;
-            ensure!(!Tokens::<T>::contains_key(&token_symbol), Error::<T>::TokenExists);
             ensure!(!Tokens::<T>::contains_key(&token_name), Error::<T>::TokenExists);
             let now = Self::get_now_ts();
             let new_proposal = Proposal {
