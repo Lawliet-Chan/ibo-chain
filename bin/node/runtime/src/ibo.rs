@@ -224,13 +224,13 @@ decl_module! {
         }
 
         #[weight = 200]
-        fn create_delist_proposal(origin, token_symbol: Vec<u8>) -> DispatchResult {
+        fn create_delist_proposal(origin, token_name: Vec<u8>) -> DispatchResult {
             let proposer = ensure_signed(origin)?;
             ensure!(
                 MAX_SUPPLY - T::Currency::total_issuance().saturated_into::<u64>() >= TOTAL_REWARDS,
                 Error::<T>::InsufficientIssuance
             );
-            let token_info = Self::token(&token_symbol).ok_or(Error::<T>::TokenNotFound)?;
+            let token_info = Self::token(&token_name).ok_or(Error::<T>::TokenNotFound)?;
             let now = Self::get_now_ts();
             let id = Self::generate_id();
             let new_proposal = Self::clone_from_token_info(
@@ -254,9 +254,9 @@ decl_module! {
         }
 
         #[weight = 100]
-        fn create_rise_proposal(origin, token_symbol: Vec<u8>) -> DispatchResult {
+        fn create_rise_proposal(origin, token_name: Vec<u8>) -> DispatchResult {
             let proposer = ensure_signed(origin)?;
-            let token_info = Self::token(&token_symbol).ok_or(Error::<T>::TokenNotFound)?;
+            let token_info = Self::token(&token_name).ok_or(Error::<T>::TokenNotFound)?;
             let now = Self::get_now_ts();
             let id = Self::generate_id();
             let new_proposal = Self::clone_from_token_info(
@@ -280,9 +280,9 @@ decl_module! {
         }
 
         #[weight = 100]
-        fn create_fall_proposal(origin, token_symbol: Vec<u8>) -> DispatchResult {
+        fn create_fall_proposal(origin, token_name: Vec<u8>) -> DispatchResult {
             let proposer = ensure_signed(origin)?;
-            let token_info = Self::token(&token_symbol).ok_or(Error::<T>::TokenNotFound)?;
+            let token_info = Self::token(&token_name).ok_or(Error::<T>::TokenNotFound)?;
             let now = Self::get_now_ts();
             let id = Self::generate_id();
             let new_proposal = Self::clone_from_token_info(
@@ -486,7 +486,7 @@ impl<T: Trait> Module<T> {
                     && supporters_goals + opponents_goals > 0
                 {
                     Tokens::<T>::insert(
-                        &proposal.token_symbol,
+                        &proposal.token_name,
                         Self::clone_from_proposal(proposal.clone()),
                     );
                     ProposalState::Approved
@@ -539,7 +539,7 @@ impl<T: Trait> Module<T> {
                     && supporters_goals + opponents_goals > 0
                 {
                     Tokens::<T>::insert(
-                        &proposal.token_symbol,
+                        &proposal.token_name,
                         Self::clone_from_proposal(proposal.clone()),
                     );
                     ProposalState::Approved
@@ -550,7 +550,7 @@ impl<T: Trait> Module<T> {
 
             if proposal.proposal_type == ProposalType::Delist {
                 proposal.state = if supporters_goals > opponents_goals {
-                    Tokens::<T>::remove(&proposal.token_symbol);
+                    Tokens::<T>::remove(&proposal.token_name);
                     ProposalState::Approved
                 } else {
                     ProposalState::Rejected
