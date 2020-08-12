@@ -23,7 +23,8 @@ pub type BalanceOf<T> =
     <<T as Trait>::Currency as Currency<<T as frame_system::Trait>::AccountId>>::Balance;
 pub type ProposalId = u32;
 
-pub const ZERO_GOALS: (u64, u64) = (0, 0);
+pub const ZERO_GOALS_U64: (u64, u64) = (0, 0);
+pub const ZERO_GOALS_U128: (u128, u128) = (0, 0);
 pub const TOTAL_REWARDS: u64 = 100_000;
 pub const MAX_SUPPLY: u64 = 1_000_000_000;
 
@@ -65,7 +66,7 @@ pub struct Proposal<AccountId, Balance> {
     pub review_goals: (u64, u64),
     /// The voting number of (supporters, opponents)
     /// Number = VoteAge * TokenAmount
-    pub vote_goals: (u64, u64),
+    pub vote_goals: (u128, u128),
     /// When the state of proposal changes, update this timestamp.
     pub rewards_remainder: Balance,
     pub timestamp: u64,
@@ -115,6 +116,15 @@ impl Default for ProposalState {
     }
 }
 
+#[derive(Encode, Decode, Clone, Debug, PartialEq, Eq)]
+pub struct StakingInfo<Balance> {
+    pub proposal_id: ProposalId,
+    pub staking_amount: Balance,
+    pub age_idx: u8,
+    pub wheather_received_reward: bool,
+    pub timestamp: u64,
+}
+
 decl_storage! {
     trait Store for Module<T: Trait> as Ibo {
         pub Proposals get(fn proposal): map hasher(twox_64_concat) ProposalId => Option<Proposal<T::AccountId, BalanceOf<T>>>;
@@ -126,8 +136,8 @@ decl_storage! {
         pub Reviewers get(fn reviewers): map hasher(twox_64_concat) ProposalId => Vec<T::AccountId>;
 
         pub Voters get(fn voters): map hasher(twox_64_concat) ProposalId => Vec<T::AccountId>;
-        // (BalanceOf<T>, usize) = (staking, AGE_DAY index)
-        pub Staking get(fn staking): map hasher(twox_64_concat) T::AccountId => Option<(ProposalId, BalanceOf<T>, u8, u64)>;
+
+        pub Staking get(fn staking): map hasher(twox_64_concat) T::AccountId => Vec<StakingInfo<BalanceOf<T>>>;
 
         pub IdGenerator get(fn id_generator): ProposalId = 0;
     }
@@ -171,8 +181,8 @@ decl_module! {
                 current_market: MarketType::Off,
                 target_market,
                 state: ProposalState::Pending,
-                review_goals: ZERO_GOALS,
-                vote_goals: ZERO_GOALS,
+                review_goals: ZERO_GOALS_U64,
+                vote_goals: ZERO_GOALS_U128,
                 rewards_remainder: TOTAL_REWARDS.saturated_into::<BalanceOf<T>>(),
                 timestamp: now,
             };
@@ -209,8 +219,8 @@ decl_module! {
                 current_market: MarketType::Off,
                 target_market,
                 state: ProposalState::Pending,
-                review_goals: ZERO_GOALS,
-                vote_goals: ZERO_GOALS,
+                review_goals: ZERO_GOALS_U64,
+                vote_goals: ZERO_GOALS_U128,
                 rewards_remainder: TOTAL_REWARDS.saturated_into::<BalanceOf<T>>(),
                 timestamp: now,
             };
@@ -354,6 +364,15 @@ decl_module! {
                     p.as_mut().unwrap().vote_goals.1 += goals;
                 }
             });
+            let now = Self::get_now_ts();
+            Staking::<T>::mutate(&user, |infos| infos.push( StakingInfo {
+                proposal_id: id,
+                staking_amount: amount,
+                age_idx,
+                wheather_received_reward: false,
+                timestamp: now,
+            }));
+            debug::info!("vote support goals = {}, vote opponents goals = {}",Self::proposal(id).unwrap().vote_goals.0, Self::proposal(id).unwrap().vote_goals.1);
             Self::deposit_event(RawEvent::ProposalChanged(UPDATE, Self::proposal(id).unwrap()));
             Ok(())
         }
@@ -369,49 +388,34 @@ decl_module! {
                 is_state_for_rewards,
                 Error::<T>::StateNotForRewards
             );
-            let stake = Self::staking(&user).ok_or(Error::<T>::NoneStaking)?;
-            ensure!(stake.0 == id, Error::<T>::StakeNotMatch);
-            let goals = Self::get_goals_from_staking(stake.1, stake.2).saturated_into::<BalanceOf<T>>();
+            let stake_info = Self::get_staking_info(&user, id).ok_or(Error::<T>::NoneStaking)?;
+            let goals = Self::get_goals_from_staking(stake_info.staking_amount, stake_info.age_idx).saturated_into::<BalanceOf<T>>();
             let total_goals = (proposal.vote_goals.0 + proposal.vote_goals.1)
                 .saturated_into::<BalanceOf<T>>();
             let reward = TOTAL_REWARDS.saturated_into::<BalanceOf<T>>() * goals / total_goals;
             Self::deposit_into_existing(&user, reward)?;
             Proposals::<T>::mutate(id, |p| p.as_mut().unwrap().rewards_remainder -= reward);
+            Staking::<T>::mutate(&user, |infos| {
+                let mut iter = infos.iter_mut();
+                while let Some(info) = iter.next() {
+                    if info.proposal_id == id {
+                        info.wheather_received_reward = true;
+                    }
+                }
+            });
             Self::deposit_event(RawEvent::ProposalChanged(UPDATE, Self::proposal(id).unwrap()));
             Ok(())
         }
 
-        // #[weight = 10]
-        // fn stake(origin, id: ProposalId, amount: BalanceOf<T>, age_idx: u8) -> DispatchResult {
-        //     let user = ensure_signed(origin)?;
-        //     let proposal = Self::proposal(id).ok_or(Error::<T>::ProposalNotFound)?;
-        //     ensure!(
-        //         proposal.proposal_type == ProposalType::List || proposal.proposal_type == ProposalType::Delist,
-        //         Error::<T>::ProposalNotForVoting,
-        //     );
-        //     ensure!(
-        //         proposal.state == ProposalState::Voting || proposal.state == ProposalState::Reviewing,
-        //         Error::<T>::IllegalStakeTime
-        //     );
-        //     ensure!(!Staking::<T>::contains_key(&user), Error::<T>::AlreadyStaked);
-        //     T::Currency::reserve(&user, amount)?;
-        //     let now = Self::get_now_ts();
-        //     Staking::<T>::insert(user, (id, amount, age_idx, now));
-        //     Ok(())
-        // }
-
         #[weight = 100]
-        fn unstake(origin) -> DispatchResult {
+        fn unstake(origin, id: ProposalId) -> DispatchResult {
             let user = ensure_signed(origin)?;
-            let stake = Self::staking(&user).ok_or(Error::<T>::NoneStaking)?;
-            let stake_amount = stake.1;
-            let age_idx = stake.2;
-            let stake_ts = stake.3;
-            let stake_days = AGE_DAY.get(age_idx as usize).unwrap().1;
-            let duration = Self::get_now_ts() - stake_ts;
+            let stake_info = Self::get_staking_info(&user, id).ok_or(Error::<T>::NoneStaking)?;
+            let stake_days = AGE_DAY.get(stake_info.age_idx as usize).unwrap().1;
+            let duration = Self::get_now_ts() - stake_info.timestamp;
             ensure!(duration >= stake_days, Error::<T>::StillInStaking);
-            T::Currency::unreserve(&user, stake_amount);
-            Staking::<T>::remove(&user);
+            T::Currency::unreserve(&user, stake_info.staking_amount);
+            Staking::<T>::mutate(user, |infos| infos.remove_item(&stake_info));
             Ok(())
         }
 
@@ -434,6 +438,20 @@ decl_module! {
 }
 
 impl<T: Trait> Module<T> {
+    fn get_staking_info(
+        user: &T::AccountId,
+        id: ProposalId,
+    ) -> Option<StakingInfo<BalanceOf<T>>> {
+        let stakes = Self::staking(user);
+        let mut iter = stakes.iter();
+        while let Some(info) = iter.next() {
+            if info.proposal_id == id {
+                return Some(info.clone());
+            }
+        }
+        None
+    }
+
     fn deposit_into_existing(account: &T::AccountId, amount: BalanceOf<T>) -> DispatchResult {
         ensure!(
             MAX_SUPPLY.saturated_into::<BalanceOf<T>>() - T::Currency::total_issuance() >= amount,
@@ -491,7 +509,7 @@ impl<T: Trait> Module<T> {
                     );
                     ProposalState::Approved
                 } else {
-                    ProposalState::Rejected
+                    ProposalState::RejectedClosed
                 };
             } else {
                 if VotingProposal::exists() {
@@ -503,7 +521,7 @@ impl<T: Trait> Module<T> {
                         VotingProposal::put(id);
                         ProposalState::Voting
                     } else {
-                        ProposalState::Rejected
+                        ProposalState::RejectedClosed
                     };
                 }
 
@@ -514,7 +532,7 @@ impl<T: Trait> Module<T> {
                         VotingProposal::put(id);
                         ProposalState::Voting
                     } else {
-                        ProposalState::Rejected
+                        ProposalState::RejectedClosed
                     };
                 }
             }
@@ -586,9 +604,11 @@ impl<T: Trait> Module<T> {
         }
     }
 
-    fn get_goals_from_staking(stake: BalanceOf<T>, age_idx: u8) -> u64 {
-        let stake = stake.saturated_into::<u64>();
-        let vote_age = AGE_DAY.get(age_idx as usize).unwrap().0;
+    fn get_goals_from_staking(stake: BalanceOf<T>, age_idx: u8) -> u128 {
+        let stake = stake.saturated_into::<u128>();
+        debug::info!("***************************stake: {}", stake);
+        let vote_age = AGE_DAY.get(age_idx as usize).unwrap().0 as u128;
+        debug::info!("***************************vote_age: {}", vote_age);
         stake * vote_age
     }
 
@@ -649,8 +669,8 @@ impl<T: Trait> Module<T> {
             current_market: token_info.current_market,
             target_market,
             state: ProposalState::Pending,
-            review_goals: ZERO_GOALS,
-            vote_goals: ZERO_GOALS,
+            review_goals: ZERO_GOALS_U64,
+            vote_goals: ZERO_GOALS_U128,
             rewards_remainder,
             timestamp,
         }
