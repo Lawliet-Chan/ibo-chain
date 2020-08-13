@@ -389,6 +389,7 @@ decl_module! {
                 Error::<T>::StateNotForRewards
             );
             let stake_info = Self::get_staking_info(&user, id).ok_or(Error::<T>::NoneStaking)?;
+            ensure!(!stake_info.wheather_received_reward, Error::<T>::AlreadyReceivedReward);
             let goals = Self::get_goals_from_staking(stake_info.staking_amount, stake_info.age_idx).saturated_into::<BalanceOf<T>>();
             let total_goals = (proposal.vote_goals.0 + proposal.vote_goals.1)
                 .saturated_into::<BalanceOf<T>>();
@@ -605,7 +606,7 @@ impl<T: Trait> Module<T> {
     }
 
     fn get_goals_from_staking(stake: BalanceOf<T>, age_idx: u8) -> u128 {
-        let stake = stake.saturated_into::<u128>();
+        let stake = stake.saturated_into::<u128>() / 1_000_000_000_000_000;
         debug::info!("***************************stake: {}", stake);
         let vote_age = AGE_DAY.get(age_idx as usize).unwrap().0 as u128;
         debug::info!("***************************vote_age: {}", vote_age);
@@ -738,6 +739,8 @@ decl_error! {
         AlreadyReview,
         /// You already vote and Cannot vote again.
         AlreadyVote,
+        /// You already received reward.
+        AlreadyReceivedReward,
         /// You are not a member of collective.
         NotInCollective,
         /// You cannot receive rewards now.

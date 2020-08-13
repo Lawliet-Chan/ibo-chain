@@ -47,7 +47,7 @@ const STAGING_TELEMETRY_URL: &str = "wss://telemetry.polkadot.io/submit/";
 
 const DEFAULT_PROPS: &str = r#"
 	{
-		"tokenDecimals": 4,
+		"tokenDecimals": 15,
 		"tokenSymbol": "IBO"
 	}
 "#;
