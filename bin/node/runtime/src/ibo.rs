@@ -356,6 +356,7 @@ decl_module! {
                 Ok(())
             })?;
 
+            ensure!(age_idx < AGE_DAY.len() as u8, Error::<T>::InvalidAgeIdx);
             let goals = Self::get_goals_from_staking(amount, age_idx);
             Proposals::<T>::mutate(id, |p| {
                 if stand {
@@ -764,5 +765,7 @@ decl_error! {
         StillInStaking,
         /// total issuance insufficient
         InsufficientIssuance,
+        /// invalid age_idx
+        InvalidAgeIdx,
     }
 }
