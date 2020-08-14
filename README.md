@@ -18,10 +18,11 @@
  （也可直接在根目录下编译，但那样需要编译很多不需要的包） 
  编译完之后的二进制文件: ibo-chain/target/release/ibo-chain
  
-5. 启动 ibo-chain  
-`./target/release/ibo-chain --dev`
+5. 本地启动 ibo-chain  
+`./target/release/ibo-chain --dev`  
+  在服务器上启动  
+`./target/release/ibo-chain --rpc-cors=all --rpc-external --ws-external --dev`  
 
 6. 清空链存储  
 `./target/release/ibo-chain purge-chain --dev -y`  
-（除了第一次启动以外，每次启动区块链之前都需要清空一次）
  
