@@ -83,9 +83,9 @@ pub mod congress {
 
     pub const PASS_RATE: f32 = 0.66;
 
-    pub const ALLOW_MODIFY_DURATION: u64 = 10 * MINUTE; // 1 * DAY;
+    pub const ALLOW_MODIFY_DURATION: u64 = 1000 * 60; // 1 * DAY;
 
-    pub const REVIEW_DURATION: u64 = 10 * MINUTE; // 7 * DAY;
+    pub const REVIEW_DURATION: u64 = 1000 * 60; // 7 * DAY;
 }
 
 pub mod referendum {
@@ -94,9 +94,9 @@ pub mod referendum {
 
     pub type VoteAge = u64;
 
-    pub const VOTE_DURATION: u64 = 10 * MINUTE; // 7 * DAY;
+    pub const VOTE_DURATION: u64 = 1000 * 60; // 7 * DAY;
 
-    pub const RECEIVE_REWARDS_DURATION: u64 = 10 * MINUTE; // 30 * DAY;
+    pub const RECEIVE_REWARDS_DURATION: u64 = 1000 * 60; // 30 * DAY;
 
     pub const AGE_DAY: [(VoteAge, LockPeriod); 6] = [
         (A_AGE, A_DAY),
